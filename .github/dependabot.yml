@@ -1,0 +1,22 @@
+version: 2
+updates:
+  # Actions are pinned to commit SHAs; this keeps the pins (and their version comments) current.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  # Dependency changes also need THIRD-PARTY-LICENSES.md regenerated before CI passes (see CONTRIBUTING.md).
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # The egui crates only work at matching versions, so they move in one pull request.
+      egui:
+        patterns: ["egui*", "eframe", "emath", "ecolor", "epaint*"]
+      # Everything else at minor or patch level, one pull request a week (Dependabot counts 0.x to 0.y as minor,
+      # which Cargo treats as breaking); major updates get their own pull requests.
+      crates:
+        patterns: ["*"]
+        update-types: [minor, patch]

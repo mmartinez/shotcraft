@@ -1,0 +1,48 @@
+[Desktop Entry]
+Type=Application
+Name=ShotCraft
+GenericName=Screenshot Tool
+Comment=Capture, annotate, redact and share screenshots
+# Without a subcommand ShotCraft starts its tray icon and global shortcuts.
+Exec=shotcraft
+TryExec=shotcraft
+Icon=io.github.mmartinez.shotcraft
+Terminal=false
+# The tray process maps no window, so a startup-notification cursor would spin until it times out.
+StartupNotify=false
+StartupWMClass=io.github.mmartinez.shotcraft
+Categories=Graphics;
+Keywords=screenshot;screen capture;screengrab;annotate;redact;OCR;scrolling capture;
+Actions=all-in-one;capture-area;capture-window;capture-fullscreen;scrolling-capture;capture-text;open-history;open-settings;
+
+[Desktop Action all-in-one]
+Name=All-In-One
+Exec=shotcraft all-in-one
+
+[Desktop Action capture-area]
+Name=Capture Area
+Exec=shotcraft capture-area
+
+[Desktop Action capture-window]
+Name=Capture Window
+Exec=shotcraft capture-window
+
+[Desktop Action capture-fullscreen]
+Name=Capture Fullscreen
+Exec=shotcraft capture-fullscreen
+
+[Desktop Action scrolling-capture]
+Name=Scrolling Capture
+Exec=shotcraft scrolling-capture
+
+[Desktop Action capture-text]
+Name=Capture Text
+Exec=shotcraft capture-text
+
+[Desktop Action open-history]
+Name=Capture History
+Exec=shotcraft open-history
+
+[Desktop Action open-settings]
+Name=Settings
+Exec=shotcraft open-settings

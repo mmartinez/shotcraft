@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- ShotCraft app icon: viewfinder corners (capture) and an annotation arrow (edit, share). -->
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#3AA0FF"/>
+      <stop offset="1" stop-color="#3D3BDB"/>
+    </linearGradient>
+    <radialGradient id="sheen" cx="0.3" cy="0.12" r="0.75">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="arrow" gradientUnits="userSpaceOnUse" x1="176" y1="336" x2="336" y2="176">
+      <stop offset="0" stop-color="#FFB224"/>
+      <stop offset="1" stop-color="#FF4F6E"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8"/>
+    </filter>
+    <g id="arrow-shape" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M176 336 L262 250" stroke-width="46" fill="none"/>
+      <path d="M336 176 L309 285 L227 203 Z" stroke-width="22"/>
+    </g>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)"/>
+  <rect width="512" height="512" rx="112" fill="url(#sheen)"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="36" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M112 196 V136 a24 24 0 0 1 24 -24 H196"/>
+    <path d="M316 112 H376 a24 24 0 0 1 24 24 V196"/>
+    <path d="M400 316 V376 a24 24 0 0 1 -24 24 H316"/>
+    <path d="M196 400 H136 a24 24 0 0 1 -24 -24 V316"/>
+  </g>
+  <g transform="translate(256 256) scale(0.9) translate(-256 -256)">
+    <use href="#arrow-shape" fill="#14205E" stroke="#14205E" opacity="0.45" transform="translate(4 12)" filter="url(#shadow)"/>
+    <use href="#arrow-shape" fill="url(#arrow)" stroke="url(#arrow)"/>
+  </g>
+</svg>

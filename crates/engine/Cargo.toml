@@ -1,0 +1,35 @@
+[package]
+name = "shotcraft-engine"
+description = "Screen capture, settings, history, OCR, clipboard, saving and uploading for ShotCraft."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+shotcraft-doc = { workspace = true }
+arboard = { workspace = true }
+chrono = { workspace = true }
+dirs = { workspace = true }
+emath = { workspace = true }
+image = { workspace = true }
+ocrs = { workspace = true }
+ring = { workspace = true }
+rqrr = { workspace = true }
+rten = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+ureq = { workspace = true }
+xcap = { workspace = true }
+
+[target.'cfg(not(target_os = "macos"))'.dependencies]
+enigo = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2-core-graphics = { workspace = true }

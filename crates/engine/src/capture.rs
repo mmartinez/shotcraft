@@ -1,0 +1,213 @@
+//! Screen and window capture on top of xcap.
+//!
+//! Geometry here is in "units": logical points on macOS and physical pixels elsewhere,
+//! the space xcap uses for windows and `cursor_position` reports. xcap's X11 monitors are
+//! the exception (it divides them by the Xft.dpi scale), so `geometry` undoes that.
+//! Captured images are always physical pixels; callers convert through `px_per_unit`.
+
+use emath::{Rect, pos2, vec2};
+use image::RgbaImage;
+
+use crate::doc::effects::IRect;
+use crate::{Error, Result};
+
+pub struct MonitorShot {
+    pub id: u32,
+    /// Geometry in units (see module docs).
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+    pub scale: f32,
+    pub primary: bool,
+    pub image: RgbaImage,
+}
+
+impl MonitorShot {
+    /// Captured pixels per unit.
+    pub fn px_per_unit(&self) -> f32 {
+        self.image.width() as f32 / self.width.max(1) as f32
+    }
+
+    pub fn contains_unit(&self, x: i32, y: i32) -> bool {
+        x >= self.x && y >= self.y && x < self.x + self.width as i32 && y < self.y + self.height as i32
+    }
+
+    /// Monitor rectangle in winit logical coordinates, for placing windows on it.
+    pub fn logical_rect(&self) -> Rect {
+        logical_rect(self.x, self.y, self.width, self.height, self.scale)
+    }
+}
+
+pub fn logical_rect(x: i32, y: i32, w: u32, h: u32, scale: f32) -> Rect {
+    let k = if cfg!(target_os = "macos") { 1.0 } else { 1.0 / scale.max(0.1) };
+    Rect::from_min_size(pos2(x as f32 * k, y as f32 * k), vec2(w as f32 * k, h as f32 * k))
+}
+
+/// Primary monitor in logical coordinates, without capturing it.
+pub fn primary_logical_rect() -> Rect {
+    xcap::Monitor::all()
+        .ok()
+        .and_then(|ms| {
+            let m = ms.iter().find(|m| m.is_primary().unwrap_or(false)).or(ms.first())?;
+            let (x, y, w, h, scale) = geometry(m).ok()?;
+            Some(logical_rect(x, y, w, h, scale))
+        })
+        .unwrap_or(Rect::from_min_size(pos2(0.0, 0.0), vec2(1920.0, 1080.0)))
+}
+
+/// Scale factor of the primary monitor (physical pixels per logical point).
+pub fn primary_scale() -> f32 {
+    xcap::Monitor::all()
+        .ok()
+        .and_then(|ms| {
+            let m = ms.iter().find(|m| m.is_primary().unwrap_or(false)).or(ms.first())?;
+            m.scale_factor().ok()
+        })
+        .filter(|s| *s > 0.0)
+        .unwrap_or(1.0)
+}
+
+/// Monitor geometry in units (see module docs) and its scale factor.
+fn geometry(m: &xcap::Monitor) -> Result<(i32, i32, u32, u32, f32)> {
+    let scale = m.scale_factor().unwrap_or(1.0);
+    let k = if cfg!(target_os = "linux") { scale } else { 1.0 };
+    let f = |v: f32| (v * k).round();
+    Ok((f(m.x()? as f32) as i32, f(m.y()? as f32) as i32, f(m.width()? as f32) as u32, f(m.height()? as f32) as u32, scale))
+}
+
+fn shoot(m: &xcap::Monitor) -> Result<MonitorShot> {
+    let (x, y, width, height, scale) = geometry(m)?;
+    let image = m.capture_image().map_err(Error::ScreenRecording)?;
+    // Physical units equal the image size; the X11 round trip in `geometry` can be a pixel off.
+    let (width, height) = if cfg!(target_os = "macos") { (width, height) } else { image.dimensions() };
+    Ok(MonitorShot { id: m.id()?, x, y, width, height, scale, primary: m.is_primary().unwrap_or(false), image })
+}
+
+pub fn capture_monitors() -> Result<Vec<MonitorShot>> {
+    let monitors = xcap::Monitor::all()?;
+    let shots: Vec<_> = monitors.iter().map(shoot).collect::<Result<_>>()?;
+    if shots.is_empty() {
+        return Err(Error::NoMonitors);
+    }
+    Ok(shots)
+}
+
+/// A fresh capture of one monitor: by id, else the 1-based `display` index (1 = primary),
+/// else the monitor under the cursor. An id or index that matches nothing is an error, never another screen.
+pub fn capture_monitor(id: Option<u32>, display: Option<usize>) -> Result<MonitorShot> {
+    let monitors = xcap::Monitor::all()?;
+    let m = if let Some(id) = id {
+        monitors.iter().find(|m| m.id().ok() == Some(id)).ok_or(Error::MonitorGone(id))?
+    } else if let Some(n) = display {
+        n.checked_sub(1).and_then(|i| ordered_displays(&monitors).get(i).copied()).ok_or(Error::NoSuchDisplay(n))?
+    } else {
+        cursor_position()
+            .and_then(|(x, y)| {
+                monitors.iter().find(|m| {
+                    let Ok((mx, my, w, h, _)) = geometry(m) else { return false };
+                    x >= mx && y >= my && x < mx + w as i32 && y < my + h as i32
+                })
+            })
+            .or_else(|| ordered_displays(&monitors).first().copied())
+            .ok_or(Error::NoMonitors)?
+    };
+    shoot(m)
+}
+
+/// A monitor kept open for repeated captures (scrolling capture).
+pub struct Monitor(xcap::Monitor);
+
+impl Monitor {
+    pub fn by_id(id: u32) -> Option<Self> {
+        xcap::Monitor::all().ok()?.into_iter().find(|m| m.id().ok() == Some(id)).map(Self)
+    }
+
+    pub fn capture(&self) -> Result<RgbaImage> {
+        Ok(self.0.capture_image()?)
+    }
+}
+
+/// Primary first, then the rest in enumeration order (the `--display` numbering).
+fn ordered_displays(monitors: &[xcap::Monitor]) -> Vec<&xcap::Monitor> {
+    let mut v: Vec<_> = monitors.iter().collect();
+    v.sort_by_key(|m| !m.is_primary().unwrap_or(false));
+    v
+}
+
+pub fn index_of_display(shots: &[MonitorShot], display: usize) -> Option<usize> {
+    let mut order: Vec<usize> = (0..shots.len()).collect();
+    order.sort_by_key(|&i| !shots[i].primary);
+    order.get(display.saturating_sub(1)).copied()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn cursor_position() -> Option<(i32, i32)> {
+    use enigo::Mouse;
+    let enigo = enigo::Enigo::new(&enigo::Settings::default()).ok()?;
+    enigo.location().ok()
+}
+
+/// Read through CoreGraphics: enigo's constructor demands the Accessibility permission on macOS,
+/// which reading the cursor does not need.
+#[cfg(target_os = "macos")]
+pub fn cursor_position() -> Option<(i32, i32)> {
+    use objc2_core_graphics::CGEvent;
+    let event = CGEvent::new(None)?;
+    let p = CGEvent::location(Some(&event));
+    Some((p.x.floor() as i32, p.y.floor() as i32))
+}
+
+/// Index of the monitor under the cursor, else the primary one.
+pub fn cursor_monitor(shots: &[MonitorShot]) -> usize {
+    cursor_position().and_then(|(x, y)| shots.iter().position(|m| m.contains_unit(x, y))).or_else(|| shots.iter().position(|m| m.primary)).unwrap_or(0)
+}
+
+#[derive(Clone, Debug)]
+pub struct WinInfo {
+    pub id: u32,
+    pub title: String,
+    pub app: String,
+    /// Geometry in units.
+    pub rect: Rect,
+}
+
+/// Visible windows of other processes, topmost first.
+pub fn list_windows() -> Vec<WinInfo> {
+    let me = std::process::id();
+    let Ok(all) = xcap::Window::all() else { return Vec::new() };
+    all.iter()
+        .filter_map(|w| {
+            if w.pid().ok() == Some(me) || w.is_minimized().unwrap_or(true) {
+                return None;
+            }
+            let (x, y, width, height) = (w.x().ok()?, w.y().ok()?, w.width().ok()?, w.height().ok()?);
+            let id = w.id().ok()?;
+            (width >= 40 && height >= 30).then(|| WinInfo {
+                id,
+                title: w.title().unwrap_or_default(),
+                app: w.app_name().unwrap_or_default(),
+                rect: Rect::from_min_size(pos2(x as f32, y as f32), vec2(width as f32, height as f32)),
+            })
+        })
+        .collect()
+}
+
+pub fn capture_window(id: u32) -> Result<RgbaImage> {
+    let win = xcap::Window::all()?.into_iter().find(|w| w.id().ok() == Some(id)).ok_or_else(|| Error::Other(format!("window {id} is gone")))?;
+    Ok(win.capture_image()?)
+}
+
+pub fn crop(img: &RgbaImage, r: IRect) -> RgbaImage {
+    image::imageops::crop_imm(img, r.x, r.y, r.w, r.h).to_image()
+}
+
+/// `rect` in units mapped into `shot`'s image pixels.
+pub fn unit_rect_to_px(shot: &MonitorShot, rect: Rect) -> Option<IRect> {
+    let k = shot.px_per_unit();
+    let r = Rect::from_min_max(
+        pos2((rect.min.x - shot.x as f32) * k, (rect.min.y - shot.y as f32) * k),
+        pos2((rect.max.x - shot.x as f32) * k, (rect.max.y - shot.y as f32) * k),
+    );
+    IRect::clipped(r, shot.image.width(), shot.image.height())
+}

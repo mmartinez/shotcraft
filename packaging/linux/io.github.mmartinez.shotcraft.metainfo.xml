@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- AppStream metadata for software centres and Flathub. -->
+<component type="desktop-application">
+  <id>io.github.mmartinez.shotcraft</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>MIT OR Apache-2.0</project_license>
+  <name>ShotCraft</name>
+  <summary>Capture, annotate, redact and share screenshots</summary>
+  <developer id="io.github.mmartinez">
+    <name>The ShotCraft contributors</name>
+  </developer>
+  <description>
+    <p>
+      ShotCraft captures an area, a window, the whole screen or a scrolling page,
+      then lets you annotate, redact and share the result.
+    </p>
+    <ul>
+      <li>Area, window, fullscreen, scrolling and self-timer captures over a frozen screen</li>
+      <li>Arrows, shapes, text, counters, highlighter, spotlight, blur and pixelate</li>
+      <li>Backgrounds with padding, rounded corners and shadows</li>
+      <li>On-device text recognition and QR code reading</li>
+      <li>Pinned screenshots, capture history and drag and drop into other apps</li>
+      <li>Every capture mode is a command you can bind to a keyboard shortcut</li>
+    </ul>
+  </description>
+  <launchable type="desktop-id">io.github.mmartinez.shotcraft.desktop</launchable>
+  <icon type="stock">io.github.mmartinez.shotcraft</icon>
+  <url type="homepage">https://github.com/mmartinez/shotcraft</url>
+  <url type="bugtracker">https://github.com/mmartinez/shotcraft/issues</url>
+  <categories>
+    <category>Graphics</category>
+  </categories>
+  <keywords>
+    <keyword>screenshot</keyword>
+    <keyword>screen capture</keyword>
+    <keyword>annotate</keyword>
+    <keyword>OCR</keyword>
+  </keywords>
+  <branding>
+    <color type="primary" scheme_preference="light">#8cc8ff</color>
+    <color type="primary" scheme_preference="dark">#2d3ab8</color>
+  </branding>
+  <requires>
+    <display_length compare="ge">760</display_length>
+  </requires>
+  <supports>
+    <control>keyboard</control>
+    <control>pointing</control>
+  </supports>
+  <provides>
+    <binary>shotcraft</binary>
+  </provides>
+  <content_rating type="oars-1.1"/>
+</component>

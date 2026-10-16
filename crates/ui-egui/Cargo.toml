@@ -1,0 +1,36 @@
+[package]
+name = "shotcraft-ui-egui"
+description = "egui windows for ShotCraft: capture overlay, editor, Quick Access, pin, history, settings."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+shotcraft-engine = { workspace = true }
+anyhow = { workspace = true }
+chrono = { workspace = true }
+eframe = { workspace = true }
+egui = { workspace = true }
+egui-phosphor = { workspace = true }
+enigo = { workspace = true }
+global-hotkey = { workspace = true }
+image = { workspace = true }
+raw-window-handle = { workspace = true }
+rfd = { workspace = true }
+
+[target.'cfg(any(target_os = "windows", target_os = "macos"))'.dependencies]
+drag = { workspace = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+x11rb = { workspace = true }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = { workspace = true }
+objc2-app-kit = { workspace = true }
+objc2-foundation = { workspace = true }
