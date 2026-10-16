@@ -53,7 +53,7 @@ xcap = "0.9"
 # platform-specific
 drag = "2"
 embed-manifest = "1.5"
-x11rb = "0.13"
+x11rb = "0.14"
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", features = ["NSApplication", "NSResponder", "NSWindow"] }
 objc2-foundation = { version = "0.3", features = ["NSArray"] }
