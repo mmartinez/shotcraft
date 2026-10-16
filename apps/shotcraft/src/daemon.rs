@@ -35,7 +35,7 @@ struct Daemon {
     _lock: File,
 }
 
-const MENU: [Option<(&str, &str)>; 18] = [
+pub(crate) const MENU: [Option<(&str, &str)>; 18] = [
     Some(("All-In-One", "all-in-one")),
     Some(("Capture Area", "capture-area")),
     Some(("Capture Previous Area", "capture-previous-area")),

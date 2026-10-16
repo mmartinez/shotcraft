@@ -314,24 +314,32 @@ fn overlay_flow(mode: Mode, preset: Option<overlay::Preset>, action: Option<Acti
         }
         Outcome::Scrolling { monitor_id, rect } => {
             remember_area(monitor_id, rect);
-            let mut args = vec!["scrolling-capture".to_owned(), "--monitor-id".into(), monitor_id.to_string()];
-            args.extend(area_args(rect));
-            args.push("--start".into());
-            share::spawn(args);
+            share::spawn(scrolling_args(monitor_id, rect));
             Ok(())
         }
         Outcome::Timer { monitor_id, rect } => {
             remember_area(monitor_id, rect);
-            let mut args = vec!["countdown".to_owned(), "--monitor-id".into(), monitor_id.to_string()];
-            args.extend(area_args(rect));
-            if let Some(value) = action.and_then(|a| a.to_possible_value()) {
-                args.extend(["--action".into(), value.get_name().to_owned()]);
-            }
-            share::spawn(args);
+            share::spawn(countdown_args(monitor_id, rect, action));
             Ok(())
         }
         Outcome::Text { image } => copy_text_from(&image, settings.ocr_keep_linebreaks),
     }
+}
+
+fn scrolling_args(monitor_id: u32, r: IRect) -> Vec<String> {
+    let mut args = vec!["scrolling-capture".to_owned(), "--monitor-id".into(), monitor_id.to_string()];
+    args.extend(area_args(r));
+    args.push("--start".into());
+    args
+}
+
+fn countdown_args(monitor_id: u32, r: IRect, action: Option<Action>) -> Vec<String> {
+    let mut args = vec!["countdown".to_owned(), "--monitor-id".into(), monitor_id.to_string()];
+    args.extend(area_args(r));
+    if let Some(value) = action.and_then(|a| a.to_possible_value()) {
+        args.extend(["--action".into(), value.get_name().to_owned()]);
+    }
+    args
 }
 
 fn area_args(r: IRect) -> [String; 8] {
@@ -398,4 +406,42 @@ fn copy_text_from(img: &image::RgbaImage, keep_linebreaks: bool) -> anyhow::Resu
     share::copy_text(&text)?;
     share::notify("Text copied", &text);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use clap::CommandFactory;
+
+    fn parse<S: Into<String>>(args: impl IntoIterator<Item = S>) -> Option<Cmd> {
+        Cli::try_parse_from(std::iter::once("shotcraft".to_owned()).chain(args.into_iter().map(Into::into))).ok()?.cmd
+    }
+
+    #[test]
+    fn cli_definition_is_valid() {
+        Cli::command().debug_assert();
+    }
+
+    /// Shortcuts and the tray menu launch subcommands by name, so a rename would only fail at launch.
+    #[test]
+    fn shortcut_and_menu_commands_exist() {
+        let shortcuts = Settings::default().hotkeys.entries().into_iter().map(|(cmd, _)| cmd);
+        let menu = daemon::MENU.into_iter().flatten().map(|(_, cmd)| cmd).filter(|&cmd| cmd != "quit");
+        for cmd in shortcuts.chain(menu) {
+            assert!(parse([cmd]).is_some(), "`{cmd}` is not a subcommand");
+        }
+    }
+
+    #[test]
+    fn launched_area_commands_round_trip() {
+        let rect = IRect { x: 10, y: 20, w: 300, h: 400 };
+        let Some(Cmd::ScrollingCapture { area, monitor_id: Some(7), start: true, autoscroll: false }) = parse(scrolling_args(7, rect)) else {
+            panic!("scrolling-capture arguments do not parse back");
+        };
+        assert_eq!(area.rect(), Some(rect));
+        let Some(Cmd::Countdown { monitor_id: 7, area, action: Some(Action::Save) }) = parse(countdown_args(7, rect, Some(Action::Save))) else {
+            panic!("countdown arguments do not parse back");
+        };
+        assert_eq!(area.rect(), Some(rect));
+    }
 }
