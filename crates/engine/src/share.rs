@@ -16,7 +16,16 @@ use crate::{Error, Result};
 pub const NOTIFY_BODY_ENV: &str = "SHOTCRAFT_NOTIFY_BODY";
 
 fn this_app() -> Command {
-    Command::new(std::env::current_exe().unwrap_or_else(|_| PathBuf::from("shotcraft")))
+    Command::new(std::env::current_exe().map(installed_path).unwrap_or_else(|_| PathBuf::from("shotcraft")))
+}
+
+/// Linux names a running binary that has since been replaced (an update, a rebuild) `<path> (deleted)`;
+/// launch the file now at that path rather than fail until the daemon restarts.
+fn installed_path(exe: PathBuf) -> PathBuf {
+    match exe.to_str().and_then(|s| s.strip_suffix(" (deleted)")) {
+        Some(path) if cfg!(target_os = "linux") => PathBuf::from(path),
+        _ => exe,
+    }
 }
 
 /// Start a child without waiting for it.
@@ -24,7 +33,7 @@ fn launch(cmd: &mut Command) {
     match cmd.stdin(Stdio::null()).stdout(Stdio::null()).spawn() {
         // Reap the child so long-lived parents (the tray daemon) leave no zombies.
         Ok(mut child) => drop(std::thread::spawn(move || child.wait())),
-        Err(err) => eprintln!("failed to launch: {err}"),
+        Err(err) => eprintln!("failed to launch {}: {err}", cmd.get_program().to_string_lossy()),
     }
 }
 
@@ -254,6 +263,15 @@ pub fn extract_link(body: &str, path: &str) -> Result<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_replaced_binary_is_launched_from_its_path() {
+        let replaced = PathBuf::from("/opt/shot craft/shotcraft (deleted)");
+        let expected = if cfg!(target_os = "linux") { PathBuf::from("/opt/shot craft/shotcraft") } else { replaced.clone() };
+        assert_eq!(installed_path(replaced), expected);
+        let current = PathBuf::from("/opt/shot craft/shotcraft");
+        assert_eq!(installed_path(current.clone()), current);
+    }
 
     #[test]
     fn extracts_link_from_plain_and_json_bodies() {
