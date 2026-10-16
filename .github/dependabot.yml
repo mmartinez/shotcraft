@@ -15,8 +15,11 @@ updates:
       # The egui crates only work at matching versions, so they move in one pull request.
       egui:
         patterns: ["egui*", "eframe", "emath", "ecolor", "epaint*"]
-      # Everything else at minor or patch level, one pull request a week (Dependabot counts 0.x to 0.y as minor,
-      # which Cargo treats as breaking); major updates get their own pull requests.
+      # Everything else at minor or patch level, one pull request a week. Breaking updates (including 0.x to 0.y)
+      # get their own pull requests.
       crates:
         patterns: ["*"]
         update-types: [minor, patch]
+    ignore:
+      # The engine hands rten models to ocrs, so rten must stay on the version ocrs is built against; bump them together.
+      - dependency-name: rten
