@@ -1,4 +1,5 @@
 /target
+/mutants.out*
 .DS_Store
 .idea/
 .vscode/

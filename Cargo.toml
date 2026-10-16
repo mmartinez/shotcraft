@@ -74,6 +74,12 @@ opt-level = 2
 opt-level = 1
 debug = "line-tables-only"
 
+# For cargo mutants (.cargo/mutants.toml): every mutant is a rebuild, so build as fast as possible.
+[profile.mutants]
+inherits = "test"
+opt-level = 0
+debug = "none"
+
 [profile.release]
 lto = "thin"
 codegen-units = 1

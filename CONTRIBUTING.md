@@ -44,6 +44,22 @@ Bundled fonts, icons and images must be permissively licensed, keep their licens
 New behaviour comes with a test that fails without it: a boundary, an error path or an invariant a user would notice.
 For UI changes, run the real binary and look at the result; AGENTS.md describes a headless X server setup for Linux.
 
+### Mutation testing
+
+[cargo-mutants](https://mutants.rs) changes the code in small ways (a flipped comparison, a function returning a default) and checks that a test fails.
+CI runs it on the code a pull request changes and fails when a change survives.
+Run the same check locally before you open the pull request:
+
+```sh
+cargo install cargo-mutants --version 27.1.0 --locked
+git diff origin/main > /tmp/pr.diff
+cargo mutants --in-diff /tmp/pr.diff
+```
+
+A surviving mutant usually means a missing test.
+If the code cannot be unit tested because it needs a display or another process, add it to the exclusions in `.cargo/mutants.toml` in the same pull request.
+A full run (`cargo mutants`) takes hours; the Mutants workflow runs it weekly and on demand, and reports the survivors without failing.
+
 ## Pull requests
 
 Keep each pull request to one change.

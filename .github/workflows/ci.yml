@@ -119,3 +119,46 @@ jobs:
           sudo apt-get install -y --no-install-recommends desktop-file-utils appstream
           desktop-file-validate packaging/linux/io.github.mmartinez.shotcraft.desktop
           appstreamcli validate --no-net packaging/linux/io.github.mmartinez.shotcraft.metainfo.xml
+
+  # The weekly full run is in mutants.yml; this one only looks at what the pull request changes.
+  mutants:
+    name: mutants in changed code
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libclang-dev libxcb1-dev libgbm-dev libegl-dev libpipewire-0.3-dev libspa-0.2-dev
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+
+      # Restores the mutants-profile build that the weekly run saves.
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: mutants
+          save-if: false
+
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-mutants@27.1.0
+
+      - name: Mutants
+        run: |
+          git diff "origin/$GITHUB_BASE_REF" HEAD > "$RUNNER_TEMP/pr.diff"
+          cargo mutants --in-place --no-shuffle --in-diff "$RUNNER_TEMP/pr.diff"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: mutants.out
+          path: mutants.out

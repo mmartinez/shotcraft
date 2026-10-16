@@ -1,0 +1,14 @@
+# cargo-mutants settings, used by CI and local runs (see CONTRIBUTING.md).
+
+# Windows, the tray loop, screen reads and the process glue in main.rs need a display or other
+# processes, so unit tests cannot catch mutants there. Pure helpers next to them stay in scope.
+exclude_globs = ["crates/ui-egui/**", "apps/shotcraft/src/daemon.rs"]
+exclude_re = [
+    '^apps/shotcraft/src/main\.rs:.* (replace|in) (main|dispatch|overlay_flow|finish_capture|copy_text_from|image_source|remember_area)\b',
+    '^crates/engine/src/capture\.rs:.* (replace|in) (geometry|shoot|capture_image|capture_monitors?|capture_window|Monitor::(by_id|capture)|primary_logical_rect|primary_scale|list_windows|ordered_displays|cursor_position|x11::(grab_output|wayland_session))\b',
+]
+
+# Some doc code is only tested from the crates that use it.
+test_workspace = true
+
+profile = "mutants"

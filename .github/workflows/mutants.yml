@@ -1,0 +1,73 @@
+name: Mutants
+
+# A full cargo-mutants run, reported but never failing on surviving mutants. Pull requests are gated on their
+# changed code in ci.yml; this run shows the rest. Settings are in .cargo/mutants.toml.
+on:
+  schedule:
+    - cron: "23 3 * * 1"
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  mutants:
+    name: mutants (shard ${{ matrix.shard }} of 8)
+    # A full run costs more private-repository Actions minutes than the free plan includes, so the schedule only
+    # runs while the repository is public. Manual runs always go ahead.
+    if: github.event_name == 'workflow_dispatch' || !github.event.repository.private
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Linux system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libclang-dev libxcb1-dev libgbm-dev libegl-dev libpipewire-0.3-dev libspa-0.2-dev
+
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
+        with:
+          toolchain: stable
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          shared-key: mutants
+          save-if: ${{ github.ref == 'refs/heads/main' && matrix.shard == 0 }}
+
+      - uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-mutants@27.1.0
+
+      # Exit code 2 means surviving mutants and 3 means timeouts: both are the report. Anything else is a broken run.
+      - name: Mutants
+        run: |
+          status=0
+          cargo mutants --in-place --no-shuffle --shard ${{ matrix.shard }}/8 || status=$?
+          case $status in 0|2|3) ;; *) exit "$status" ;; esac
+
+      - name: Summary
+        if: always() && hashFiles('mutants.out/missed.txt') != ''
+        run: |
+          {
+            echo "### Shard ${{ matrix.shard }}: $(wc -l < mutants.out/missed.txt) missed, $(wc -l < mutants.out/timeout.txt) timed out"
+            echo '```'
+            cat mutants.out/missed.txt mutants.out/timeout.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: always()
+        with:
+          name: mutants-shard-${{ matrix.shard }}
+          path: mutants.out
