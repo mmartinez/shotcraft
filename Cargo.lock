@@ -4424,6 +4424,7 @@ dependencies = [
  "shotcraft-doc",
  "thiserror 2.0.21",
  "ureq",
+ "x11rb 0.14.0",
  "xcap",
 ]
 

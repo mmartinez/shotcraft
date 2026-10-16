@@ -1,4 +1,4 @@
-//! Screen and window capture on top of xcap.
+//! Screen and window capture on top of xcap (monitors on X11 go through `x11`).
 //!
 //! Geometry here is in "units": logical points on macOS and physical pixels elsewhere,
 //! the space xcap uses for windows and `cursor_position` reports. xcap's X11 monitors are
@@ -78,10 +78,20 @@ fn geometry(m: &xcap::Monitor) -> Result<(i32, i32, u32, u32, f32)> {
 
 fn shoot(m: &xcap::Monitor) -> Result<MonitorShot> {
     let (x, y, width, height, scale) = geometry(m)?;
-    let image = m.capture_image().map_err(Error::ScreenRecording)?;
+    let image = capture_image(m)?;
     // Physical units equal the image size; the X11 round trip in `geometry` can be a pixel off.
     let (width, height) = if cfg!(target_os = "macos") { (width, height) } else { image.dimensions() };
     Ok(MonitorShot { id: m.id()?, x, y, width, height, scale, primary: m.is_primary().unwrap_or(false), image })
+}
+
+fn capture_image(m: &xcap::Monitor) -> Result<RgbaImage> {
+    #[cfg(target_os = "linux")]
+    if !x11::wayland_session()
+        && let Some(image) = x11::grab_output(m.id()?).map_err(|e| Error::Other(format!("screen capture: {e}")))?
+    {
+        return Ok(image);
+    }
+    m.capture_image().map_err(Error::ScreenRecording)
 }
 
 pub fn capture_monitors() -> Result<Vec<MonitorShot>> {
@@ -124,7 +134,7 @@ impl Monitor {
     }
 
     pub fn capture(&self) -> Result<RgbaImage> {
-        Ok(self.0.capture_image()?)
+        capture_image(&self.0)
     }
 }
 
@@ -210,4 +220,65 @@ pub fn unit_rect_to_px(shot: &MonitorShot, rect: Rect) -> Option<IRect> {
         pos2((rect.max.x - shot.x as f32) * k, (rect.max.y - shot.y as f32) * k),
     );
     IRect::clipped(r, shot.image.width(), shot.image.height())
+}
+
+#[cfg(target_os = "linux")]
+mod x11 {
+    //! Monitor capture on X11. `GetImage` on the root window has returned bands of stale
+    //! content on a composited NVIDIA desktop, so the root is first copied into a pixmap with
+    //! `IncludeInferiors` (the server draws each window into it) and that pixmap is read.
+
+    use image::RgbaImage;
+    use x11rb::connection::Connection;
+    use x11rb::protocol::randr::ConnectionExt as _;
+    use x11rb::protocol::xproto::{ConnectionExt as _, CreateGCAux, ImageFormat, ImageOrder, SubwindowMode};
+
+    type BoxError = Box<dyn std::error::Error + Send + Sync>;
+
+    /// The test xcap uses to pick its Wayland backend, which then also captures for us.
+    pub fn wayland_session() -> bool {
+        std::env::var("XDG_SESSION_TYPE").is_ok_and(|t| t == "wayland") || std::env::var("WAYLAND_DISPLAY").is_ok_and(|d| d.to_lowercase().contains("wayland"))
+    }
+
+    /// The monitor driving RandR output `output` (xcap's monitor id), or `None` when the
+    /// root's pixel format is not 32 bits per pixel and xcap should read it instead.
+    pub fn grab_output(output: u32) -> Result<Option<RgbaImage>, BoxError> {
+        let (conn, screen) = x11rb::connect(None)?;
+        let setup = conn.setup();
+        let root = setup.roots.get(screen).ok_or("no X screen")?.root;
+        let monitors = conn.randr_get_monitors(root, true)?.reply()?.monitors;
+        let m = monitors.iter().find(|m| m.outputs.contains(&output)).ok_or("the monitor is no longer connected")?;
+        let depth = conn.get_geometry(root)?.reply()?.depth;
+        if setup.pixmap_formats.iter().find(|f| f.depth == depth).map(|f| f.bits_per_pixel) != Some(32) {
+            return Ok(None);
+        }
+        // The pixmap and GC go away with the connection.
+        let pixmap = conn.generate_id()?;
+        conn.create_pixmap(depth, pixmap, root, m.width, m.height)?;
+        let gc = conn.generate_id()?;
+        conn.create_gc(gc, pixmap, &CreateGCAux::new().subwindow_mode(SubwindowMode::INCLUDE_INFERIORS))?;
+        conn.copy_area(root, pixmap, gc, m.x, m.y, 0, 0, m.width, m.height)?;
+        let data = conn.get_image(ImageFormat::Z_PIXMAP, pixmap, 0, 0, m.width, m.height, !0)?.reply()?.data;
+        let rgba = to_rgba(data, setup.image_byte_order == ImageOrder::LSB_FIRST);
+        Ok(Some(RgbaImage::from_raw(m.width.into(), m.height.into(), rgba).ok_or("the X server returned a short image")?))
+    }
+
+    /// 32-bit `xRGB` pixels in the server's byte order to opaque RGBA, in place.
+    fn to_rgba(mut data: Vec<u8>, lsb_first: bool) -> Vec<u8> {
+        for p in data.as_chunks_mut::<4>().0 {
+            let [a, b, c, d] = *p;
+            *p = if lsb_first { [c, b, a, 255] } else { [b, c, d, 255] };
+        }
+        data
+    }
+
+    #[cfg(test)]
+    mod tests {
+        #[test]
+        fn pixels_convert_from_either_byte_order() {
+            // 0x00112233 (red 0x11, green 0x22, blue 0x33) as the server sends it.
+            assert_eq!(super::to_rgba(vec![0x33, 0x22, 0x11, 0x00], true), [0x11, 0x22, 0x33, 255]);
+            assert_eq!(super::to_rgba(vec![0x00, 0x11, 0x22, 0x33], false), [0x11, 0x22, 0x33, 255]);
+        }
+    }
 }
