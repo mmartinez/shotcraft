@@ -43,9 +43,9 @@ rqrr = "0.11"
 rten = { version = "0.26", default-features = false, features = ["onnx_format"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-skrifa = "0.44"
+skrifa = "0.48"
 thiserror = "2"
-tiny-skia = "0.11"
+tiny-skia = "0.12"
 tray-icon = { version = "0.26", default-features = false, features = ["ksni"] }
 ureq = "3"
 winit = "0.30"
