@@ -3,6 +3,8 @@
 A cross-platform (Linux, Windows, macOS) screenshot tool in pure Rust.
 The UI is egui/eframe; there is no webview.
 
+![The ShotCraft editor with numbered steps, a callout arrow, a highlighted line and a pixelated secret key on a gradient background](assets/screenshots/editor.png)
+
 ## Features
 
 | Feature | ShotCraft |
