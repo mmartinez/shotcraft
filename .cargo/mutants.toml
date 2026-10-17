@@ -7,7 +7,7 @@ exclude_globs = ["crates/ui-egui/**", "apps/shotcraft/src/daemon.rs"]
 exclude_re = [
     '^apps/shotcraft/src/main\.rs:.* (replace|in) (main|dispatch|overlay_flow|finish_capture|copy_text_from|image_source|remember_area)\b',
     '^crates/engine/src/capture\.rs:.* (replace|in) (geometry|shoot|capture_image|capture_monitors?|capture_window|display_count|Monitor::(by_id|capture)|primary_logical_rect|primary_scale|list_windows|ordered_displays|cursor_position|x11::(grab_output|wayland_session))\b',
-    '^crates/engine/src/share\.rs:.* (replace|in) (launch|Watched::detach|serve_clipboard|copy_text)\b',
+    '^crates/engine/src/share\.rs:.* (replace|in) (launch|Watched::detach|serve_clipboard|hold|copy_text)\b',
     # Equivalent: an image exactly PREVIEW_MAX_EDGE long is resized to its own size.
     '^crates/engine/src/ops\.rs:.* replace > with >= in preview\b',
 ]

@@ -175,37 +175,62 @@ fn serve_from(kind: &str, path: &Path) -> Result<()> {
 
 /// Body of the `clipboard-serve` helper: take the clipboard, tell `serve_from`, then own it until someone else does.
 pub fn serve_clipboard(image: Option<&Path>, text: Option<&Path>) -> Result<()> {
-    let mut cb = arboard::Clipboard::new()?;
-    let ready = || {
-        let mut out = std::io::stdout();
-        let _ = writeln!(out, "{CLIPBOARD_READY}").and_then(|()| out.flush());
-    };
     if let Some(path) = image {
         let img = image::open(path)?.into_rgba8();
         let _ = std::fs::remove_file(path);
-        cb.set_image(image_data(&img))?;
-        ready();
-        // Setting the same data again, now waiting, keeps ownership until another app takes it.
-        #[cfg(target_os = "linux")]
-        {
-            use arboard::SetExtLinux;
-            cb.set().wait().image(image_data(&img))?;
-        }
-        return Ok(());
+        return hold(move |set| set.image(image_data(&img)));
     }
     if let Some(path) = text {
         let s = std::fs::read_to_string(path)?;
         let _ = std::fs::remove_file(path);
-        cb.set_text(s.as_str())?;
-        ready();
-        #[cfg(target_os = "linux")]
-        {
-            use arboard::SetExtLinux;
-            cb.set().wait().text(s)?;
-        }
-        return Ok(());
+        return hold(move |set| set.text(s));
     }
     Err(Error::Other("nothing to serve".into()))
+}
+
+/// How long the X server gets to show the new clipboard owner (500 polls 10 ms apart); encoding a large image comes first.
+#[cfg(target_os = "linux")]
+const OWNER_POLLS: u32 = 500;
+
+/// Write the clipboard once, waiting in a thread until another app takes it; print the ready line once
+/// the X server shows the new owner. Writing again after the ready line could put this copy back over a newer one.
+#[cfg(target_os = "linux")]
+fn hold(write: impl FnOnce(arboard::Set<'_>) -> std::result::Result<(), arboard::Error> + Send + 'static) -> Result<()> {
+    use arboard::SetExtLinux;
+    use x11rb::protocol::xproto::ConnectionExt as _;
+    let x11 = |e: &dyn std::fmt::Display| Error::Other(format!("clipboard: {e}"));
+    let (conn, _) = x11rb::connect(None).map_err(|e| x11(&e))?;
+    let selection = conn.intern_atom(false, b"CLIPBOARD").map_err(|e| x11(&e))?.reply().map_err(|e| x11(&e))?.atom;
+    let owner = || conn.get_selection_owner(selection).ok().and_then(|cookie| cookie.reply().ok()).map(|reply| reply.owner);
+    let before = owner();
+    let writer = std::thread::spawn(move || -> Result<()> {
+        let mut cb = arboard::Clipboard::new()?;
+        write(cb.set().wait())?;
+        Ok(())
+    });
+    let mut owned = false;
+    for _ in 0..OWNER_POLLS {
+        owned = owner() != before;
+        if owned || writer.is_finished() {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    if owned {
+        let mut out = std::io::stdout();
+        let _ = writeln!(out, "{CLIPBOARD_READY}").and_then(|()| out.flush());
+    } else if !writer.is_finished() {
+        return Err(Error::Other("the X server did not show the new clipboard owner".into()));
+    }
+    writer.join().map_err(|_| Error::Other("the clipboard thread panicked".into()))?
+}
+
+/// Elsewhere the OS keeps the clipboard after we exit, so one write is all.
+#[cfg(not(target_os = "linux"))]
+fn hold(write: impl FnOnce(arboard::Set<'_>) -> std::result::Result<(), arboard::Error>) -> Result<()> {
+    let mut cb = arboard::Clipboard::new()?;
+    write(cb.set())?;
+    Ok(())
 }
 
 pub fn clipboard_image() -> Result<RgbaImage> {
