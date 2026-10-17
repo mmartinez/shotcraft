@@ -106,7 +106,7 @@ impl Server {
     async fn show_capture(&self, Parameters(args): Parameters<JsonObject>) -> CallToolResult {
         let shown = call(args, |req: ops::ShowCapture| {
             history::find(&req.id)?;
-            share::spawn(show_args(req.view, req.id.as_str()));
+            share::open(show_args(req.view, req.id.as_str()))?;
             Ok(match req.view {
                 View::Editor => "Opened in the editor.",
                 View::Pin => "Pinned above all windows.",

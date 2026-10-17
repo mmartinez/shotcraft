@@ -41,11 +41,12 @@ impl HistoryId {
 }
 
 /// The trust boundary for ids from outside: an id names exactly one folder inside the history folder.
+/// Only the characters `new_id` produces are allowed; a deny-list misses Windows prefixes (`C:x` replaces the root in `join`).
 impl TryFrom<String> for HistoryId {
     type Error = Error;
 
     fn try_from(id: String) -> Result<Self> {
-        if id.is_empty() || id.contains(['/', '\\', '.']) {
+        if id.is_empty() || !id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-') {
             return Err(Error::InvalidHistoryId(id));
         }
         Ok(Self(id))
@@ -182,7 +183,7 @@ mod tests {
 
     #[test]
     fn history_ids_name_exactly_one_folder() {
-        for bad in ["", "..", "a/b", "a\\b"] {
+        for bad in ["", "..", "a/b", "a\\b", "C:x", "a b"] {
             assert!(matches!(HistoryId::parse(bad), Err(Error::InvalidHistoryId(_))), "{bad:?} was accepted");
             assert!(matches!(delete(bad), Err(Error::InvalidHistoryId(_))), "delete accepted {bad:?}");
         }

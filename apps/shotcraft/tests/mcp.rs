@@ -30,17 +30,19 @@ fn request(stdin: &mut ChildStdin, lines: &Receiver<String>, id: u64, method: &s
 #[test]
 fn hosts_see_a_stable_contract() {
     let dir = std::env::temp_dir().join(format!("shotcraft-mcp-{}", std::process::id()));
-    std::fs::create_dir_all(dir.join("shotcraft")).unwrap();
-    // Nothing should be saved, but a regression must not write into the real screenshots folder.
-    std::fs::write(dir.join("shotcraft/settings.json"), json!({"save_dir": dir}).to_string()).unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_shotcraft"))
-        .arg("mcp")
-        .env("XDG_CONFIG_HOME", &dir)
-        .env("XDG_DATA_HOME", &dir)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .spawn()
-        .unwrap();
+    let stored = "20261017-101502117-04211";
+    std::fs::create_dir_all(dir.join("history").join(stored)).unwrap();
+    std::fs::write(
+        dir.join("history").join(stored).join("meta.json"),
+        json!({"id": stored, "created": 0, "kind": "area", "width": 2, "height": 1}).to_string(),
+    )
+    .unwrap();
+    image::RgbaImage::new(2, 1).save(dir.join("history").join(stored).join("capture.png")).unwrap();
+    std::fs::write(dir.join("settings.json"), json!({"save_dir": dir}).to_string()).unwrap();
+    let mut server = Command::new(env!("CARGO_BIN_EXE_shotcraft"));
+    // No display: a window the server launches must fail, not open on the machine running the tests.
+    server.arg("mcp").env("SHOTCRAFT_HOME", &dir).env_remove("DISPLAY").env_remove("WAYLAND_DISPLAY");
+    let mut child = server.stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap();
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     let (tx, lines) = mpsc::channel();
@@ -84,11 +86,11 @@ fn hosts_see_a_stable_contract() {
     let bad_type = request(&mut stdin, &lines, 4, "tools/call", json!({"name": "capture_screen", "arguments": {"display": "one"}}));
     assert_eq!(bad_type["isError"], true, "{bad_type}");
 
-    for (id, tool) in [(5, "list_captures"), (6, "list_windows")] {
-        let listed = request(&mut stdin, &lines, id, "tools/call", json!({"name": tool, "arguments": {}}));
-        let key = tool.trim_start_matches("list_");
-        assert!(listed["isError"] == false && listed["structuredContent"][key].is_array(), "{listed}");
-    }
+    let listed = request(&mut stdin, &lines, 5, "tools/call", json!({"name": "list_captures", "arguments": {}}));
+    assert_eq!(listed["structuredContent"]["captures"][0]["id"], stored, "the history in SHOTCRAFT_HOME, and only it: {listed}");
+    assert_eq!(listed["structuredContent"]["captures"].as_array().map(Vec::len), Some(1), "{listed}");
+    let windows = request(&mut stdin, &lines, 6, "tools/call", json!({"name": "list_windows", "arguments": {}}));
+    assert!(windows["isError"] == false && windows["structuredContent"]["windows"].is_array(), "{windows}");
     let unknown = "19700101-000000000-00000";
     let calls = [
         ("get_capture", json!({"id": unknown})),
@@ -105,6 +107,16 @@ fn hosts_see_a_stable_contract() {
     }
     let gone = request(&mut stdin, &lines, 20, "tools/call", json!({"name": "capture_window", "arguments": {"window_id": 0}}));
     assert_eq!(gone["isError"], true, "{gone}");
+
+    let got = request(&mut stdin, &lines, 21, "tools/call", json!({"name": "get_capture", "arguments": {"id": stored}}));
+    assert!(got["structuredContent"]["id"] == stored && got["content"][1]["type"] == "image", "{got}");
+    let saved = request(&mut stdin, &lines, 22, "tools/call", json!({"name": "save_capture", "arguments": {"id": stored}}));
+    let path = saved["structuredContent"]["path"].as_str().map(std::path::PathBuf::from).unwrap_or_default();
+    assert!(path.starts_with(&dir) && path.is_file(), "saves go to the configured folder: {saved}");
+    if cfg!(target_os = "linux") {
+        let shown = request(&mut stdin, &lines, 23, "tools/call", json!({"name": "show_capture", "arguments": {"id": stored, "view": "pin"}}));
+        assert_eq!(shown["isError"], true, "a window that cannot open is not reported as shown: {shown}");
+    }
 
     drop(stdin);
     let deadline = Instant::now() + TIMEOUT;

@@ -48,6 +48,43 @@ where
     launch(this_app().args(args));
 }
 
+/// How long a window mode gets to fail before it counts as open (40 polls 50 ms apart); failures such as
+/// no display or a bad file come within milliseconds.
+const OPEN_POLLS: u32 = 40;
+
+/// Launch a window mode like `spawn`, but report a launch that fails within the first two seconds, with the
+/// mode's error text. Its stderr goes to a file, not a pipe: a window that outlives us would hold a
+/// caller's pipe open, and writing into one we closed would fail its `eprintln!`.
+pub fn open<I, S>(args: I) -> Result<()>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<std::ffi::OsStr>,
+{
+    let dir = run_dir();
+    std::fs::create_dir_all(&dir)?;
+    let log = dir.join(format!("open-{}-{}.log", std::process::id(), nanos()));
+    let mut child = this_app().args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(std::fs::File::create(&log)?).spawn()?;
+    for _ in 0..OPEN_POLLS {
+        if let Some(status) = child.try_wait()? {
+            let text = std::fs::read_to_string(&log).unwrap_or_default();
+            let _ = std::fs::remove_file(&log);
+            if status.success() {
+                return Ok(());
+            }
+            let text = text.trim();
+            return Err(Error::Other(format!("the window did not open: {}", if text.is_empty() { status.to_string() } else { text.to_owned() })));
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    // Still running: the window is up. Unix lets us unlink its log now; Windows only once the window closes.
+    let _ = std::fs::remove_file(&log);
+    drop(std::thread::spawn(move || {
+        let _ = child.wait();
+        let _ = std::fs::remove_file(log);
+    }));
+    Ok(())
+}
+
 pub fn notify(title: &str, body: &str) {
     launch(this_app().args(["notify", "--title", title]).env(NOTIFY_BODY_ENV, body));
 }

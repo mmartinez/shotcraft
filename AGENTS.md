@@ -84,7 +84,8 @@ For platform-specific code, also check the other targets, for example with `carg
 ## Verifying UI changes
 
 Run the real binary and look at the result.
-On Linux a headless X server works: start `Xvfb :77 -screen 0 1920x1080x24` and a window manager, point `DISPLAY`, `XDG_CONFIG_HOME` and `XDG_DATA_HOME` at a scratch directory, launch subcommands, drive them with XTest, and screenshot the root window.
+On Linux a headless X server works: start `Xvfb :77 -screen 0 1920x1080x24` and a window manager, set `DISPLAY`, point `SHOTCRAFT_HOME` at a scratch directory, launch subcommands, drive them with XTest, and screenshot the root window.
+`SHOTCRAFT_HOME` replaces the settings and data folders on every OS, so tests and scratch runs never touch a real user's captures.
 Give egui at least 50 ms between synthetic input events or it misses keys.
 
 ## Agents and the command registry
