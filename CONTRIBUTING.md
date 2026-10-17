@@ -60,6 +60,15 @@ A surviving mutant usually means a missing test.
 If the code cannot be unit tested because it needs a display or another process, add it to the exclusions in `.cargo/mutants.toml` in the same pull request.
 A full run (`cargo mutants`) takes hours; the Mutants workflow runs it weekly and on demand, and reports the survivors without failing.
 
+## Releases
+
+The Release workflow ([`.github/workflows/release.yml`](.github/workflows/release.yml)) builds the packages for Linux, Windows and macOS.
+Set the version in `Cargo.toml` (`[workspace.package] version`, such as `0.1.0-beta.2`), commit it, then run the workflow from the Actions tab or push the commit to the `release` branch.
+The workflow attaches every package and a `SHA256SUMS` file to a draft release named `v<version>`, marked as a pre-release when the version has a pre-release tag.
+Check the draft and publish it; publishing creates the tag.
+
+To build one platform's packages locally, run `packaging/linux/package.sh`, `packaging/macos/package.sh` or `packaging/windows/package.ps1`; each script lists what it needs and writes to `dist/release`.
+
 ## Pull requests
 
 Keep each pull request to one change.

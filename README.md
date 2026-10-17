@@ -43,9 +43,20 @@ Running `shotcraft` with no subcommand starts the tray daemon with global shortc
 Coordinates are pixels of the chosen display with the origin at its top-left corner.
 `--display 1` is the main display.
 
+## Install
+
+Download the package for your system from the [releases page](https://github.com/mmartinez/shotcraft/releases); `SHA256SUMS` lists each file's checksum.
+The builds are not code-signed yet, so Windows and macOS ask you to confirm the first launch.
+
+| System | Packages | First launch |
+|---|---|---|
+| Linux x86_64 and aarch64, glibc 2.35 or newer (Ubuntu 22.04, Debian 12, Fedora 36 and later) | `.deb`, `.rpm`, `.AppImage`, `.tar.gz` | The `.deb` and `.rpm` add ShotCraft to the app menu. Make the AppImage executable (`chmod +x`) and run it. The `.tar.gz` holds `bin/shotcraft` and its `share/` files. |
+| Windows 10 and 11, x64 and arm64 | `.msi` installer, `.zip` | When SmartScreen says "Windows protected your PC", choose More info, then Run anyway. The installer adds ShotCraft to the Start menu. |
+| macOS 11 or later, Apple silicon and Intel | `.dmg` | Drag ShotCraft to Applications and open it. When macOS says it cannot verify the app, open System Settings, Privacy & Security, and choose Open Anyway. |
+
 ## Building
 
-There are no prebuilt or signed binaries yet; build from source with Rust 1.95 or newer (<https://rustup.rs>).
+Build from source with Rust 1.95 or newer (<https://rustup.rs>).
 
 ```sh
 cargo build --release
@@ -83,7 +94,7 @@ crates/engine     screen capture, settings and state, history, OCR, clipboard, s
 crates/ui-egui    every window: overlay, editor, Quick Access, pin, scrolling capture, history, settings, toasts
 apps/shotcraft    the binary: CLI and tray daemon
 assets/app-icon   the app icon (SVG master and generated theme PNGs)
-packaging         icon generation and the Linux desktop entry, metadata and installer
+packaging         icon generation, the Linux desktop entry and installer, and the release packages for each platform
 ```
 
 See [`AGENTS.md`](AGENTS.md) for the rules the code follows and [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to contribute.

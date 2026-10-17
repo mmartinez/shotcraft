@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: packaging/macos/package.sh substitutes @VERSION@ (full, such as 0.1.0-beta.1) and
+     @SHORT_VERSION@ (numeric X.Y.Z, which these keys require). -->
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>ShotCraft</string>
+  <key>CFBundleName</key>
+  <string>ShotCraft</string>
+  <key>CFBundleExecutable</key>
+  <string>ShotCraft</string>
+  <key>CFBundleIdentifier</key>
+  <string>io.github.mmartinez.shotcraft</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleSignature</key>
+  <string>????</string>
+  <key>CFBundleShortVersionString</key>
+  <string>@SHORT_VERSION@</string>
+  <key>CFBundleVersion</key>
+  <string>@SHORT_VERSION@</string>
+  <key>CFBundleGetInfoString</key>
+  <string>ShotCraft @VERSION@</string>
+  <key>CFBundleIconFile</key>
+  <string>ShotCraft</string>
+  <key>LSApplicationCategoryType</key>
+  <string>public.app-category.graphics-design</string>
+  <!-- Must match MACOSX_DEPLOYMENT_TARGET in package.sh. -->
+  <key>LSMinimumSystemVersion</key>
+  <string>11.0</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+  <key>NSHumanReadableCopyright</key>
+  <string>Copyright the ShotCraft contributors. MIT OR Apache-2.0.</string>
+</dict>
+</plist>

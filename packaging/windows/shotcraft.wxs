@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  ShotCraft MSI, built by package.ps1 with WiX Toolset v5 (the `wix` dotnet tool, version 5.0.2).
+  (No double hyphens in this comment: XML forbids them, so the install command is in package.ps1.)
+
+    wix build shotcraft.wxs -arch x64 -d Version=0.1.0 -d BinDir=... -d DocDir=... -d IconPath=... -o out.msi
+
+  Per-machine install into Program Files\ShotCraft with a Start Menu shortcut, which starts the
+  tray icon and global shortcuts. No setup wizard: Windows Installer shows only its progress
+  dialog, and `msiexec /qn` installs silently.
+
+  Never change the UpgradeCode: it is how a new version finds and replaces the installed one.
+-->
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Package
+      Name="ShotCraft"
+      Manufacturer="The ShotCraft contributors"
+      Version="$(var.Version)"
+      UpgradeCode="14234891-162C-4CCA-B023-2A755F520787"
+      Scope="perMachine"
+      Compressed="yes"
+      Language="1033">
+    <SummaryInformation Description="ShotCraft screenshot tool" Manufacturer="The ShotCraft contributors" />
+    <!-- MSI versions are numeric, so 0.1.0-beta.1 and 0.1.0-beta.2 are both 0.1.0: allow same-version
+         upgrades so successive pre-releases replace each other. -->
+    <MajorUpgrade AllowSameVersionUpgrades="yes" DowngradeErrorMessage="A newer version of ShotCraft is already installed." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+
+    <!-- Advertised shortcuts need an icon Id ending in .exe (ICE50), even for an .ico source. -->
+    <Icon Id="ShotCraftIcon.exe" SourceFile="$(var.IconPath)" />
+    <Property Id="ARPPRODUCTICON" Value="ShotCraftIcon.exe" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/mmartinez/shotcraft" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/mmartinez/shotcraft/issues" />
+
+    <StandardDirectory Id="ProgramFiles6432Folder">
+      <Directory Id="INSTALLFOLDER" Name="ShotCraft" />
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder" />
+
+    <Feature Id="Main" Title="ShotCraft">
+      <ComponentGroupRef Id="AppFiles" />
+      <ComponentGroupRef Id="LicenseFiles" />
+    </Feature>
+  </Package>
+
+  <Fragment>
+    <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
+      <Component>
+        <File Id="ShotCraftExe" Source="$(var.BinDir)\shotcraft.exe" KeyPath="yes">
+          <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="ShotCraft"
+              Description="Capture, annotate, redact and share screenshots" WorkingDirectory="INSTALLFOLDER"
+              Advertise="yes" Icon="ShotCraftIcon.exe" IconIndex="0" />
+        </File>
+      </Component>
+    </ComponentGroup>
+
+    <ComponentGroup Id="LicenseFiles" Directory="INSTALLFOLDER" Subdirectory="licenses">
+      <File Source="$(var.DocDir)\README.md" />
+      <File Source="$(var.DocDir)\LICENSE-MIT" />
+      <File Source="$(var.DocDir)\LICENSE-APACHE" />
+      <File Source="$(var.DocDir)\NOTICE" />
+      <File Source="$(var.DocDir)\THIRD-PARTY-LICENSES.md" />
+      <File Source="$(var.DocDir)\ATTRIBUTION.md" />
+      <File Source="$(var.DocDir)\OFL-Inter.txt" />
+    </ComponentGroup>
+  </Fragment>
+</Wix>
