@@ -1,0 +1,8 @@
+{
+  "files": [
+    {
+      "path": "AGENTS.md",
+      "description": "Workspace layers and the rules every change follows: no panics or unwrap outside tests, no unsafe, thiserror in doc and engine, shared rendering through doc::render, clean-room assets"
+    }
+  ]
+}
