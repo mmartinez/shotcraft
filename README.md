@@ -124,7 +124,7 @@ The launcher's right-click menu offers the capture modes directly.
   On a Wayland session, bind your desktop's shortcuts to the subcommands instead.
   Only X11 (including XWayland, with `WAYLAND_DISPLAY` unset) has been tested.
 - Linux drag and drop out of Quick Access speaks XDND; it has been tested with X11 apps.
-- Copying on Linux needs the X server's X-Resource extension, which Xorg, XWayland and Xvfb provide: ShotCraft reports a copy only after confirming it owns the clipboard, and it refuses to copy when the server cannot say who owns it.
+- Copying on Linux needs a local X display with the X-Resource extension, which Xorg, XWayland and Xvfb provide: ShotCraft reports a copy only after confirming it owns the clipboard, so it refuses to copy over `ssh -X` or other network displays, where the X server cannot tell its clients apart.
 - The OCR models (about 12 MB) download on first use into the folder shown in Settings, Advanced.
 
 ## Layout

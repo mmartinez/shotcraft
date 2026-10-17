@@ -215,6 +215,13 @@ fn hold(clip: Clip) -> Result<()> {
     use x11rb::protocol::res::{ClientIdMask, ClientIdSpec, ConnectionExt as _};
     use x11rb::protocol::xproto::ConnectionExt as _;
     let x11 = |e: &dyn std::fmt::Display| Error::Other(format!("clipboard: {e}"));
+    // Ownership is proven by the PID the X server reports for a client, which names this process only over a local
+    // Unix socket. Through a network display (`ssh -X` forwards to localhost:10) the server sees the forwarding
+    // process, so other clients share that PID; refuse there rather than report a copy that may not be ours.
+    let display = x11rb::reexports::x11rb_protocol::parse_display::parse_display(None).map_err(|e| x11(&e))?;
+    if !display.host.is_empty() || display.protocol.as_deref().is_some_and(|protocol| protocol != "unix") {
+        return Err(Error::Other("copying needs a local X display; over ssh -X or TCP the X server cannot tell this copy's owner from other clients".into()));
+    }
     let (conn, _) = x11rb::connect(None).map_err(|e| x11(&e))?;
     let selection = conn.intern_atom(false, b"CLIPBOARD").map_err(|e| x11(&e))?.reply().map_err(|e| x11(&e))?.atom;
     let owner = || conn.get_selection_owner(selection).ok().and_then(|cookie| cookie.reply().ok()).map(|reply| reply.owner);
@@ -225,11 +232,9 @@ fn hold(clip: Clip) -> Result<()> {
     };
     // arboard's window comes from another connection of this process, so the server reports the same PID for it
     // as for ours, even inside a PID namespace. The core protocol cannot tell who owns a window, so without a PID
-    // there is no proof of ownership: refuse before writing rather than report a copy that may not be ours.
+    // there is no proof of ownership: refuse before writing.
     let this_process = pid_of(conn.setup().resource_id_base)
         .ok_or_else(|| Error::Other("the X server does not report client PIDs (X-Resource), so the clipboard owner cannot be confirmed".into()))?;
-    // A new owner window, not just a matching PID: under `ssh -X` every forwarded client reports the ssh client's PID.
-    let before = owner();
     let writer = std::thread::spawn(move || -> Result<()> {
         let mut cb = arboard::Clipboard::new()?;
         clip.write(cb.set().wait())?;
@@ -237,8 +242,7 @@ fn hold(clip: Clip) -> Result<()> {
     });
     let mut owned = false;
     for _ in 0..OWNER_POLLS {
-        let now = owner();
-        owned = now != before && now.filter(|&window| window != x11rb::NONE).and_then(pid_of) == Some(this_process);
+        owned = owner().filter(|&window| window != x11rb::NONE).and_then(pid_of) == Some(this_process);
         if owned || writer.is_finished() {
             break;
         }
