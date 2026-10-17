@@ -1,9 +1,9 @@
 //! Operations shared by every window: clipboard, saving, uploading and launching other modes.
 
 use std::borrow::Cow;
-use std::io::{Cursor, Write};
+use std::io::{BufRead, Cursor, Write};
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use image::RgbaImage;
@@ -48,40 +48,63 @@ where
     launch(this_app().args(args));
 }
 
+/// A launched mode whose failure we report. Its stderr goes to a file in the run folder, not a pipe: a
+/// child that outlives us would hold a caller's pipe open, and writing into one we closed would fail its `eprintln!`.
+struct Watched {
+    child: Child,
+    log: PathBuf,
+}
+
+impl Watched {
+    fn start(cmd: &mut Command, stdout: Stdio) -> Result<Self> {
+        let dir = run_dir();
+        std::fs::create_dir_all(&dir)?;
+        let log = dir.join(format!("launch-{}-{}.log", std::process::id(), nanos()));
+        let child = cmd.stdin(Stdio::null()).stdout(stdout).stderr(std::fs::File::create(&log)?).spawn()?;
+        Ok(Self { child, log })
+    }
+
+    /// `what` failed, with the mode's error text (its stderr, else its exit status) once it has exited.
+    fn failure(mut self, what: &str) -> Error {
+        let status = self.child.wait().map(|s| s.to_string()).unwrap_or_default();
+        let text = std::fs::read_to_string(&self.log).unwrap_or_default();
+        let _ = std::fs::remove_file(&self.log);
+        let text = text.trim();
+        Error::Other(format!("{what}: {}", if text.is_empty() { &status } else { text }))
+    }
+
+    /// The mode started fine: let it run and reap it. Unix lets us unlink its log now; Windows only once it exits.
+    fn detach(mut self) {
+        let _ = std::fs::remove_file(&self.log);
+        drop(std::thread::spawn(move || {
+            let _ = self.child.wait();
+            let _ = std::fs::remove_file(&self.log);
+        }));
+    }
+}
+
 /// How long a window mode gets to fail before it counts as open (40 polls 50 ms apart); failures such as
 /// no display or a bad file come within milliseconds.
 const OPEN_POLLS: u32 = 40;
 
 /// Launch a window mode like `spawn`, but report a launch that fails within the first two seconds, with the
-/// mode's error text. Its stderr goes to a file, not a pipe: a window that outlives us would hold a
-/// caller's pipe open, and writing into one we closed would fail its `eprintln!`.
+/// mode's error text.
 pub fn open<I, S>(args: I) -> Result<()>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<std::ffi::OsStr>,
 {
-    let dir = run_dir();
-    std::fs::create_dir_all(&dir)?;
-    let log = dir.join(format!("open-{}-{}.log", std::process::id(), nanos()));
-    let mut child = this_app().args(args).stdin(Stdio::null()).stdout(Stdio::null()).stderr(std::fs::File::create(&log)?).spawn()?;
+    let mut mode = Watched::start(this_app().args(args), Stdio::null())?;
     for _ in 0..OPEN_POLLS {
-        if let Some(status) = child.try_wait()? {
-            let text = std::fs::read_to_string(&log).unwrap_or_default();
-            let _ = std::fs::remove_file(&log);
-            if status.success() {
-                return Ok(());
+        if let Some(status) = mode.child.try_wait()? {
+            if !status.success() {
+                return Err(mode.failure("the window did not open"));
             }
-            let text = text.trim();
-            return Err(Error::Other(format!("the window did not open: {}", if text.is_empty() { status.to_string() } else { text.to_owned() })));
+            break;
         }
         std::thread::sleep(Duration::from_millis(50));
     }
-    // Still running: the window is up. Unix lets us unlink its log now; Windows only once the window closes.
-    let _ = std::fs::remove_file(&log);
-    drop(std::thread::spawn(move || {
-        let _ = child.wait();
-        let _ = std::fs::remove_file(log);
-    }));
+    mode.detach();
     Ok(())
 }
 
@@ -105,61 +128,81 @@ fn temp_file(ext: &str) -> Result<PathBuf> {
 }
 
 /// On X11/Wayland the clipboard lives only as long as the owning process, so a detached
-/// helper (`clipboard-serve`) holds it until another app takes over.
+/// helper (`clipboard-serve`) holds it until another app takes over; we return once it owns it.
 /// Elsewhere the OS keeps the data after we exit.
 pub fn copy_image(img: &RgbaImage) -> Result<()> {
     if cfg!(target_os = "linux") {
         let path = temp_file("png")?;
         img.save(&path)?;
-        spawn([std::ffi::OsStr::new("clipboard-serve"), "--image".as_ref(), path.as_os_str()]);
-        return Ok(());
+        return serve_from("--image", &path);
     }
-    set_image_now(img, false)
+    arboard::Clipboard::new()?.set_image(image_data(img))?;
+    Ok(())
 }
 
 pub fn copy_text(text: &str) -> Result<()> {
     if cfg!(target_os = "linux") {
         let path = temp_file("txt")?;
         std::fs::write(&path, text)?;
-        spawn([std::ffi::OsStr::new("clipboard-serve"), "--text".as_ref(), path.as_os_str()]);
-        return Ok(());
+        return serve_from("--text", &path);
     }
     arboard::Clipboard::new()?.set_text(text)?;
     Ok(())
 }
 
-fn set_image_now(img: &RgbaImage, wait: bool) -> Result<()> {
-    let data = arboard::ImageData { width: img.width() as usize, height: img.height() as usize, bytes: Cow::Borrowed(img.as_raw()) };
-    let mut cb = arboard::Clipboard::new()?;
-    #[cfg(target_os = "linux")]
-    if wait {
-        use arboard::SetExtLinux;
-        cb.set().wait().image(data)?;
-        return Ok(());
+fn image_data(img: &RgbaImage) -> arboard::ImageData<'_> {
+    arboard::ImageData { width: img.width() as usize, height: img.height() as usize, bytes: Cow::Borrowed(img.as_raw()) }
+}
+
+/// The line `clipboard-serve` prints once it owns the clipboard.
+const CLIPBOARD_READY: &str = "clipboard-ready";
+
+/// Start `clipboard-serve` on `path` and wait until it owns the clipboard, or return its error.
+fn serve_from(kind: &str, path: &Path) -> Result<()> {
+    let mut helper = Watched::start(this_app().args(["clipboard-serve", kind]).arg(path), Stdio::piped())?;
+    let mut line = String::new();
+    if let Some(out) = helper.child.stdout.take() {
+        // The ready line, or nothing when the helper exits first.
+        let _ = std::io::BufReader::new(out).read_line(&mut line);
     }
-    let _ = wait;
-    cb.set_image(data)?;
+    if line.trim_end() != CLIPBOARD_READY {
+        let _ = std::fs::remove_file(path);
+        return Err(helper.failure("the clipboard was not set"));
+    }
+    helper.detach();
     Ok(())
 }
 
-/// Body of the `clipboard-serve` helper: own the clipboard until someone else does.
+/// Body of the `clipboard-serve` helper: take the clipboard, tell `serve_from`, then own it until someone else does.
 pub fn serve_clipboard(image: Option<&Path>, text: Option<&Path>) -> Result<()> {
+    let mut cb = arboard::Clipboard::new()?;
+    let ready = || {
+        let mut out = std::io::stdout();
+        let _ = writeln!(out, "{CLIPBOARD_READY}").and_then(|()| out.flush());
+    };
     if let Some(path) = image {
         let img = image::open(path)?.into_rgba8();
         let _ = std::fs::remove_file(path);
-        return set_image_now(&img, true);
+        cb.set_image(image_data(&img))?;
+        ready();
+        // Setting the same data again, now waiting, keeps ownership until another app takes it.
+        #[cfg(target_os = "linux")]
+        {
+            use arboard::SetExtLinux;
+            cb.set().wait().image(image_data(&img))?;
+        }
+        return Ok(());
     }
     if let Some(path) = text {
         let s = std::fs::read_to_string(path)?;
         let _ = std::fs::remove_file(path);
-        let mut cb = arboard::Clipboard::new()?;
+        cb.set_text(s.as_str())?;
+        ready();
         #[cfg(target_os = "linux")]
         {
             use arboard::SetExtLinux;
             cb.set().wait().text(s)?;
         }
-        #[cfg(not(target_os = "linux"))]
-        cb.set_text(s)?;
         return Ok(());
     }
     Err(Error::Other("nothing to serve".into()))

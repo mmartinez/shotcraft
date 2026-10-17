@@ -116,6 +116,8 @@ fn hosts_see_a_stable_contract() {
     if cfg!(target_os = "linux") {
         let shown = request(&mut stdin, &lines, 23, "tools/call", json!({"name": "show_capture", "arguments": {"id": stored, "view": "pin"}}));
         assert_eq!(shown["isError"], true, "a window that cannot open is not reported as shown: {shown}");
+        let copied = request(&mut stdin, &lines, 24, "tools/call", json!({"name": "copy_capture", "arguments": {"id": stored}}));
+        assert_eq!(copied["isError"], true, "a clipboard that cannot be reached is not reported as copied: {copied}");
     }
 
     drop(stdin);
