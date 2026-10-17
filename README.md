@@ -41,9 +41,47 @@ Running `shotcraft` with no subcommand starts the tray daemon with global shortc
 | `pin`, `open-annotate`, `add-quick-access-overlay` | `--filepath` |
 | `open-from-clipboard`, `open-history`, `restore-recently-closed` | |
 | `open-settings` | `--tab general\|shortcuts\|quickaccess\|screenshots\|cloud\|advanced\|about` |
+| `mcp` | Serves AI agents over stdin and stdout, see below |
 
 Coordinates are pixels of the chosen display with the origin at its top-left corner.
 `--display 1` is the main display.
+
+## Use with AI agents
+
+`shotcraft mcp` speaks the [Model Context Protocol](https://modelcontextprotocol.io), so an agent such as Claude Code, Codex or Cursor can capture the screen, read text and hand captures back to you.
+Register it with your agent:
+
+```sh
+claude mcp add shotcraft -- shotcraft mcp
+```
+
+```toml
+# ~/.codex/config.toml
+[mcp_servers.shotcraft]
+command = "shotcraft"
+args = ["mcp"]
+```
+
+```json
+{ "mcpServers": { "shotcraft": { "command": "shotcraft", "args": ["mcp"] } } }
+```
+
+The JSON form goes in `.mcp.json` (Claude Code), `.cursor/mcp.json` (Cursor) or your agent's equivalent.
+
+| Tool | What it does |
+|---|---|
+| `capture_screen` | Captures a display (`display` 1 is the main one, the default) or an `area` of it |
+| `capture_window` | Captures one window by the id `list_windows` returns |
+| `list_windows` | Lists the visible windows of other apps, topmost first |
+| `list_captures`, `get_capture` | Browse the capture history and fetch an entry again, optionally cropped to an `area` |
+| `read_text` | Returns the text or QR code contents of a capture |
+| `copy_capture`, `save_capture`, `upload_capture` | Copy a capture to the clipboard, save it into your screenshots folder, or upload it to your configured endpoint |
+| `show_capture` | Opens a capture for you in the editor, as a pin or in Quick Access |
+
+Every capture goes into your capture history, and the other tools refer to it by its history id.
+The image an agent sees is scaled down to 1568 pixels on its long edge; `area` coordinates are always full-resolution pixels, and the result's `path` is the full capture.
+An agent's capture shows no notification or Quick Access and leaves the clipboard alone unless the agent calls `copy_capture`.
+On macOS, grant Screen Recording permission to the app that runs the agent (Terminal, Cursor, Claude), not to ShotCraft.
 
 ## Install
 
@@ -92,9 +130,9 @@ The launcher's right-click menu offers the capture modes directly.
 
 ```text
 crates/doc        document model, tiny-skia rendering, pixel effects, scrolling-capture stitching (no UI, no I/O layout)
-crates/engine     screen capture, settings and state, history, OCR, clipboard, save, upload, launching modes
+crates/engine     screen capture, settings and state, history, OCR, clipboard, save, upload, launching modes, agent operations
 crates/ui-egui    every window: overlay, editor, Quick Access, pin, scrolling capture, history, settings, toasts
-apps/shotcraft    the binary: CLI and tray daemon
+apps/shotcraft    the binary: CLI, tray daemon and MCP server
 assets/app-icon   the app icon (SVG master and generated theme PNGs)
 packaging         icon generation, the Linux desktop entry and installer, and the release packages for each platform
 ```

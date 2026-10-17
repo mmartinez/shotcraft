@@ -33,6 +33,7 @@ If a malicious file is needed to reproduce the problem, first describe its forma
 - Downloading the OCR models.
 - File paths for saving, history and project files, including overwrites and symlinks.
 - Launching modes as child processes and parsing command-line arguments.
+- The MCP server (`shotcraft mcp`): tool arguments from an agent are untrusted input, and history ids must never reach files outside the history folder.
 - Dependencies, CI, packaging and release artifacts.
 
 General bugs without a security impact belong in the normal issue tracker.
@@ -45,3 +46,5 @@ General bugs without a security impact belong in the normal issue tracker.
   An entry stays until you delete it or it expires; expired entries are removed the next time you capture or open the history.
 - Redaction and cropping are edits: a `.shotcraft` project, including the one kept with each history entry, still contains the original, unredacted capture.
   Share exported images, not project files.
+- An agent connected through `shotcraft mcp` can capture anything on your screens, read it, and upload captures to the endpoint you configured.
+  Your agent's per-tool approval is the only gate, so approve `capture_*` and `upload_capture` deliberately.

@@ -9,10 +9,10 @@ Never add Tauri, Electron or any webview or JavaScript UI layer.
 ```text
 crates/
   doc        L0 document model, tiny-skia rendering, pixel effects, scrolling-capture stitching (pure data and pixels)
-  engine     L1 screen capture (xcap), settings and state, history, OCR (ocrs), clipboard, save, upload, launching modes
+  engine     L1 screen capture (xcap), settings and state, history, OCR (ocrs), clipboard, save, upload, launching modes, agent operations (ops)
   ui-egui    L2 every window: capture overlay, editor, Quick Access, pin, scrolling capture, history, settings, toasts
 apps/
-  shotcraft  L3 the binary: clap CLI (one subcommand per mode) and the tray daemon
+  shotcraft  L3 the binary: clap CLI (one subcommand per mode), the tray daemon and the MCP server (`shotcraft mcp`)
 ```
 
 A crate depends only on lower layers.
@@ -79,7 +79,7 @@ cargo test --workspace --locked
 CI also type-checks the workspace (`cargo check`) with the `rust-version` in `Cargo.toml` (the egui crates set that floor); raise it in the same change as code that needs a newer compiler.
 
 Linux build packages are listed in the README's Building section; CI installs the same list.
-For platform-specific code, also check the other targets, for example with `cargo zigbuild clippy --target aarch64-apple-darwin` (ring's C code needs a cross C toolchain, which zig provides).
+For platform-specific code, also check the other targets, for example with `cargo-zigbuild clippy --target aarch64-apple-darwin` (ring's C code needs a cross C toolchain, which zig provides; `cargo zigbuild` only builds).
 
 ## Verifying UI changes
 
@@ -87,7 +87,14 @@ Run the real binary and look at the result.
 On Linux a headless X server works: start `Xvfb :77 -screen 0 1920x1080x24` and a window manager, point `DISPLAY`, `XDG_CONFIG_HOME` and `XDG_DATA_HOME` at a scratch directory, launch subcommands, drive them with XTest, and screenshot the root window.
 Give egui at least 50 ms between synthetic input events or it misses keys.
 
-## Next: everything is a command
+## Agents and the command registry
 
-The planned next step is a command registry in `engine` (stable id, label, shortcut, JSON params), dispatched by id from the UI, the CLI, a JSON control channel and an MCP server.
+`shotcraft mcp` (`apps/shotcraft/src/mcp.rs`) serves AI agents over the Model Context Protocol (rmcp, stdio).
+Each tool is a thin wrapper over one function in `engine::ops`: a typed request in (serde and schemars, so the request type is the tool's JSON Schema), a typed result out.
+Agent operations never toast, open windows or change the clipboard unless that is the operation's whole point.
+History ids from an agent arrive as `history::HistoryId`, which is checked when it is decoded.
+Tool names and parameter names are public API: hosts store them in configs and per-tool approvals, and `apps/shotcraft/tests/mcp.rs` fails when one changes.
+In `shotcraft mcp`, stdout carries only MCP messages; log to stderr.
+
+The planned next step is a command registry in `engine` (stable id, label, shortcut, JSON params), dispatched by id from the UI, the CLI, a JSON control channel and the MCP server; the `ops` request types become its JSON params unchanged.
 New user-visible behaviour should be shaped so it can become such a command.
