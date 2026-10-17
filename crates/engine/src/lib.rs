@@ -6,6 +6,7 @@ pub mod capture;
 pub mod config;
 pub mod history;
 pub mod ocr;
+pub mod ops;
 pub mod share;
 
 pub use shotcraft_doc as doc;
@@ -30,6 +31,8 @@ pub enum Error {
     MonitorGone(u32),
     #[error("there is no display {0} (displays are numbered from 1, primary first)")]
     NoSuchDisplay(usize),
+    #[error("area is outside the image ({width}×{height})")]
+    AreaOutside { width: u32, height: u32 },
     #[error("clipboard: {0}")]
     Clipboard(#[from] arboard::Error),
     #[error("network: {0}")]

@@ -9,12 +9,17 @@ use crate::doc::model::Background;
 
 const APP_DIR: &str = "shotcraft";
 
+/// `SHOTCRAFT_HOME` keeps settings and data in that one folder instead of the platform's (tests, sandboxes).
+fn home_override() -> Option<PathBuf> {
+    std::env::var_os("SHOTCRAFT_HOME").filter(|v| !v.is_empty()).map(PathBuf::from)
+}
+
 pub fn config_dir() -> PathBuf {
-    dirs::config_dir().unwrap_or_else(std::env::temp_dir).join(APP_DIR)
+    home_override().unwrap_or_else(|| dirs::config_dir().unwrap_or_else(std::env::temp_dir).join(APP_DIR))
 }
 
 pub fn data_dir() -> PathBuf {
-    dirs::data_dir().unwrap_or_else(std::env::temp_dir).join(APP_DIR)
+    home_override().unwrap_or_else(|| dirs::data_dir().unwrap_or_else(std::env::temp_dir).join(APP_DIR))
 }
 
 pub fn history_dir() -> PathBuf {

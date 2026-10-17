@@ -103,6 +103,14 @@ pub fn capture_monitors() -> Result<Vec<MonitorShot>> {
     Ok(shots)
 }
 
+/// Number of connected displays, without capturing any.
+pub fn display_count() -> Result<usize> {
+    match xcap::Monitor::all()?.len() {
+        0 => Err(Error::NoMonitors),
+        n => Ok(n),
+    }
+}
+
 /// A fresh capture of one monitor: by id, else the 1-based `display` index (1 = primary),
 /// else the monitor under the cursor. An id or index that matches nothing is an error, never another screen.
 pub fn capture_monitor(id: Option<u32>, display: Option<usize>) -> Result<MonitorShot> {
@@ -212,6 +220,12 @@ pub fn crop(img: &RgbaImage, r: IRect) -> RgbaImage {
     image::imageops::crop_imm(img, r.x, r.y, r.w, r.h).to_image()
 }
 
+/// `r` clipped to `img`, or `AreaOutside` with the image's size when none of it is inside.
+pub fn clip(r: IRect, img: &RgbaImage) -> Result<IRect> {
+    let rect = Rect::from_min_size(pos2(r.x as f32, r.y as f32), vec2(r.w as f32, r.h as f32));
+    IRect::clipped(rect, img.width(), img.height()).ok_or(Error::AreaOutside { width: img.width(), height: img.height() })
+}
+
 /// `rect` in units mapped into `shot`'s image pixels.
 pub fn unit_rect_to_px(shot: &MonitorShot, rect: Rect) -> Option<IRect> {
     let k = shot.px_per_unit();
@@ -220,6 +234,20 @@ pub fn unit_rect_to_px(shot: &MonitorShot, rect: Rect) -> Option<IRect> {
         pos2((rect.max.x - shot.x as f32) * k, (rect.max.y - shot.y as f32) * k),
     );
     IRect::clipped(r, shot.image.width(), shot.image.height())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn clip_keeps_the_inside_and_names_the_bounds_otherwise() {
+        let img = RgbaImage::new(100, 50);
+        assert_eq!(clip(IRect { x: 90, y: 40, w: 20, h: 20 }, &img).unwrap(), IRect { x: 90, y: 40, w: 10, h: 10 });
+        let err = clip(IRect { x: 100, y: 0, w: 10, h: 10 }, &img).unwrap_err();
+        assert!(matches!(err, Error::AreaOutside { width: 100, height: 50 }), "{err:?}");
+        assert_eq!(err.to_string(), "area is outside the image (100×50)");
+    }
 }
 
 #[cfg(target_os = "linux")]

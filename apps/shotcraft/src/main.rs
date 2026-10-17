@@ -4,6 +4,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 mod daemon;
+mod mcp;
 
 use std::panic::AssertUnwindSafe;
 use std::path::PathBuf;
@@ -138,6 +139,8 @@ enum Cmd {
         #[arg(long)]
         tab: Option<String>,
     },
+    /// Serve the Model Context Protocol on stdin/stdout so AI agents can capture, read and share screenshots.
+    Mcp,
     #[command(hide = true)]
     Notify {
         #[arg(long)]
@@ -170,12 +173,11 @@ fn main() {
     let cli = Cli::parse();
     let cmd = cli.cmd.unwrap_or(Cmd::Daemon);
     // A toast that fails must not launch another toast: without a display that would never end.
-    let toast_on_error = !matches!(cmd, Cmd::Notify { .. });
+    // The MCP host reports the server's failures; a toast would surprise the human.
+    let toast_on_error = !matches!(cmd, Cmd::Notify { .. } | Cmd::Mcp);
     // A bug in one mode must end with a message, not a silent crash; the panic hook has already printed details.
-    let result = std::panic::catch_unwind(AssertUnwindSafe(|| dispatch(cmd))).unwrap_or_else(|panic| {
-        let msg = panic.downcast_ref::<&str>().map(|s| s.to_string()).or_else(|| panic.downcast_ref::<String>().cloned()).unwrap_or_default();
-        Err(anyhow!("internal error: {msg}"))
-    });
+    let result =
+        std::panic::catch_unwind(AssertUnwindSafe(|| dispatch(cmd))).unwrap_or_else(|panic| Err(anyhow!("internal error: {}", panic_message(&*panic))));
     if let Err(err) = result {
         eprintln!("shotcraft: {err:#}");
         if toast_on_error {
@@ -183,6 +185,11 @@ fn main() {
         }
         std::process::exit(1);
     }
+}
+
+/// The text a `panic!` carried, if any.
+fn panic_message(panic: &(dyn std::any::Any + Send)) -> &str {
+    panic.downcast_ref::<&str>().copied().or_else(|| panic.downcast_ref::<String>().map(String::as_str)).unwrap_or_default()
 }
 
 fn dispatch(cmd: Cmd) -> anyhow::Result<()> {
@@ -197,7 +204,7 @@ fn dispatch(cmd: Cmd) -> anyhow::Result<()> {
         Cmd::CaptureArea { area, action } => match area.rect() {
             Some(rect) => {
                 let shot = capture::capture_monitor(None, area.display)?;
-                let r = clip(rect, &shot.image)?;
+                let r = capture::clip(rect, &shot.image)?;
                 remember_area(shot.id, r);
                 finish_capture(Doc::new(capture::crop(&shot.image, r)), "area", action, &settings)
             }
@@ -208,7 +215,7 @@ fn dispatch(cmd: Cmd) -> anyhow::Result<()> {
                 return overlay_flow(Mode::Area, None, action, &settings);
             };
             let shot = capture::capture_monitor(Some(last.monitor_id), None)?;
-            let r = clip(IRect { x: last.x, y: last.y, w: last.width, h: last.height }, &shot.image)?;
+            let r = capture::clip(IRect { x: last.x, y: last.y, w: last.width, h: last.height }, &shot.image)?;
             finish_capture(Doc::new(capture::crop(&shot.image, r)), "area", action, &settings)
         }
         Cmd::CaptureFullscreen { display, action } => {
@@ -236,7 +243,7 @@ fn dispatch(cmd: Cmd) -> anyhow::Result<()> {
             match area.rect() {
                 Some(rect) => {
                     let shot = capture::capture_monitor(None, area.display)?;
-                    copy_text_from(&capture::crop(&shot.image, clip(rect, &shot.image)?), keep)
+                    copy_text_from(&capture::crop(&shot.image, capture::clip(rect, &shot.image)?), keep)
                 }
                 None => overlay_flow(Mode::Text, None, None, &settings),
             }
@@ -265,6 +272,7 @@ fn dispatch(cmd: Cmd) -> anyhow::Result<()> {
             quick::run(id)
         }
         Cmd::OpenSettings { tab } => settings_view::run(tab),
+        Cmd::Mcp => mcp::run(),
         Cmd::Notify { title, body, warning } => notify::run(title, body.or_else(|| std::env::var(share::NOTIFY_BODY_ENV).ok()).unwrap_or_default(), warning),
         Cmd::ClipboardServe { image, text } => Ok(share::serve_clipboard(image.as_deref(), text.as_deref())?),
         Cmd::Countdown { monitor_id, area, action } => {
@@ -275,14 +283,9 @@ fn dispatch(cmd: Cmd) -> anyhow::Result<()> {
             // Give the compositor a moment to remove the countdown window before shooting.
             std::thread::sleep(std::time::Duration::from_millis(250));
             let shot = capture::capture_monitor(Some(monitor_id), None)?;
-            finish_capture(Doc::new(capture::crop(&shot.image, clip(rect, &shot.image)?)), "area", action, &settings)
+            finish_capture(Doc::new(capture::crop(&shot.image, capture::clip(rect, &shot.image)?)), "area", action, &settings)
         }
     }
-}
-
-fn clip(r: IRect, img: &image::RgbaImage) -> anyhow::Result<IRect> {
-    let rect = emath::Rect::from_min_size(emath::pos2(r.x as f32, r.y as f32), emath::vec2(r.w as f32, r.h as f32));
-    IRect::clipped(rect, img.width(), img.height()).ok_or_else(|| anyhow!("area is outside the display"))
 }
 
 fn remember_area(monitor_id: u32, r: IRect) {
@@ -413,13 +416,22 @@ mod tests {
     use super::*;
     use clap::CommandFactory;
 
-    fn parse<S: Into<String>>(args: impl IntoIterator<Item = S>) -> Option<Cmd> {
+    pub(crate) fn parse<S: Into<String>>(args: impl IntoIterator<Item = S>) -> Option<Cmd> {
         Cli::try_parse_from(std::iter::once("shotcraft".to_owned()).chain(args.into_iter().map(Into::into))).ok()?.cmd
     }
 
     #[test]
     fn cli_definition_is_valid() {
         Cli::command().debug_assert();
+    }
+
+    /// Escaped panics, in any mode and in MCP tool calls, are reported with the text they carried.
+    #[test]
+    fn panic_messages_keep_their_text() {
+        let caught = |f: fn()| std::panic::catch_unwind(f).unwrap_err();
+        assert_eq!(panic_message(&*caught(|| panic!("literal"))), "literal");
+        assert_eq!(panic_message(&*caught(|| panic!("formatted {}", 3))), "formatted 3");
+        assert_eq!(panic_message(&*caught(|| std::panic::panic_any(7))), "");
     }
 
     /// Shortcuts and the tray menu launch subcommands by name, so a rename would only fail at launch.
