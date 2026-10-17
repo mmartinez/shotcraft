@@ -931,7 +931,7 @@ impl Editor {
                 let col = swatch_color(c);
                 let (r, resp) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::click());
                 ui.painter().circle_filled(r.center(), 11.0, col);
-                ui.painter().circle_stroke(r.center(), 11.0, Stroke::new(1.0, Color32::from_black_alpha(40)));
+                ui.painter().circle_stroke(r.center(), 11.0, ui.visuals().widgets.noninteractive.bg_stroke);
                 if resp.clicked() {
                     self.set_fill(BgFill::Solid(col));
                 }
