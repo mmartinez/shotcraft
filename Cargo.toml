@@ -38,14 +38,17 @@ raw-window-handle = "0.6"
 rfd = "0.17"
 # Already in the tree through rustls; used for SHA-256 of the OCR models.
 ring = "0.17"
+rmcp = { version = "3.5", features = ["transport-io"] }
 rqrr = "0.11"
 # ocrs disables rten's default features; the published ocrs models are ONNX files.
 rten = { version = "0.26", default-features = false, features = ["onnx_format"] }
+schemars = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 skrifa = "0.48"
 thiserror = "2"
 tiny-skia = "0.12"
+tokio = { version = "1", default-features = false, features = ["rt"] }
 tray-icon = { version = "0.26", default-features = false, features = ["ksni"] }
 ureq = "3"
 winit = "0.30"
