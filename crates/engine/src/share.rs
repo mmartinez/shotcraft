@@ -224,36 +224,21 @@ fn hold(clip: Clip) -> Result<()> {
         conn.res_query_client_ids(&[spec]).ok()?.reply().ok()?.ids.first()?.value.first().copied()
     };
     // arboard's window comes from another connection of this process, so the server reports the same PID for it
-    // as for ours, even inside a PID namespace. Without a PID (remote X, no X-Resource) the fallback reads this
-    // helper's content back: arboard answers from memory only while its own window owns the clipboard.
-    let this_process = pid_of(conn.setup().resource_id_base);
-    let mut probe = arboard::Clipboard::new()?;
-    let clip = std::sync::Arc::new(clip);
-    let mut seen = owner();
-    let writer = std::thread::spawn({
-        let clip = std::sync::Arc::clone(&clip);
-        move || -> Result<()> {
-            let mut cb = arboard::Clipboard::new()?;
-            clip.write(cb.set().wait())?;
-            Ok(())
-        }
+    // as for ours, even inside a PID namespace. The core protocol cannot tell who owns a window, so without a PID
+    // there is no proof of ownership: refuse before writing rather than report a copy that may not be ours.
+    let this_process = pid_of(conn.setup().resource_id_base)
+        .ok_or_else(|| Error::Other("the X server does not report client PIDs (X-Resource), so the clipboard owner cannot be confirmed".into()))?;
+    // A new owner window, not just a matching PID: under `ssh -X` every forwarded client reports the ssh client's PID.
+    let before = owner();
+    let writer = std::thread::spawn(move || -> Result<()> {
+        let mut cb = arboard::Clipboard::new()?;
+        clip.write(cb.set().wait())?;
+        Ok(())
     });
     let mut owned = false;
     for _ in 0..OWNER_POLLS {
         let now = owner();
-        if now != seen {
-            seen = now;
-            owned = match this_process {
-                Some(pid) => now.filter(|&window| window != x11rb::NONE).and_then(pid_of) == Some(pid),
-                None => {
-                    let same = match &*clip {
-                        Clip::Image(img) => probe.get_image().is_ok_and(|got| *got.bytes == **img.as_raw()),
-                        Clip::Text(s) => probe.get_text().is_ok_and(|got| got == *s),
-                    };
-                    same && owner() == now
-                }
-            };
-        }
+        owned = now != before && now.filter(|&window| window != x11rb::NONE).and_then(pid_of) == Some(this_process);
         if owned || writer.is_finished() {
             break;
         }
