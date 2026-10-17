@@ -207,17 +207,26 @@ impl Clip {
 const OWNER_POLLS: u32 = 500;
 
 /// Write the clipboard once, waiting in a thread until another app takes it, and print the ready line once
-/// this helper owns it. Writing again after the ready line could put this copy back over a newer one.
+/// this helper owns it. It never writes again, so an app taking the clipboard after the ready line is a newer copy.
 #[cfg(target_os = "linux")]
 fn hold(clip: Clip) -> Result<()> {
     use arboard::SetExtLinux;
+    use x11rb::connection::Connection as _;
+    use x11rb::protocol::res::{ClientIdMask, ClientIdSpec, ConnectionExt as _};
     use x11rb::protocol::xproto::ConnectionExt as _;
     let x11 = |e: &dyn std::fmt::Display| Error::Other(format!("clipboard: {e}"));
     let (conn, _) = x11rb::connect(None).map_err(|e| x11(&e))?;
     let selection = conn.intern_atom(false, b"CLIPBOARD").map_err(|e| x11(&e))?.reply().map_err(|e| x11(&e))?.atom;
     let owner = || conn.get_selection_owner(selection).ok().and_then(|cookie| cookie.reply().ok()).map(|reply| reply.owner);
-    // arboard shares one context per process and answers `get` from memory while it owns the clipboard,
-    // so a probe that reads back this helper's content proves the owner is this helper, not another app.
+    // The PID the X server reports (X-Resource) for the client that created `xid`.
+    let pid_of = |xid: u32| {
+        let spec = ClientIdSpec { client: xid, mask: ClientIdMask::LOCAL_CLIENT_PID };
+        conn.res_query_client_ids(&[spec]).ok()?.reply().ok()?.ids.first()?.value.first().copied()
+    };
+    // arboard's window comes from another connection of this process, so the server reports the same PID for it
+    // as for ours, even inside a PID namespace. Without a PID (remote X, no X-Resource) the fallback reads this
+    // helper's content back: arboard answers from memory only while its own window owns the clipboard.
+    let this_process = pid_of(conn.setup().resource_id_base);
     let mut probe = arboard::Clipboard::new()?;
     let clip = std::sync::Arc::new(clip);
     let mut seen = owner();
@@ -234,9 +243,15 @@ fn hold(clip: Clip) -> Result<()> {
         let now = owner();
         if now != seen {
             seen = now;
-            owned = match &*clip {
-                Clip::Image(img) => probe.get_image().is_ok_and(|got| *got.bytes == **img.as_raw()),
-                Clip::Text(s) => probe.get_text().is_ok_and(|got| got == *s),
+            owned = match this_process {
+                Some(pid) => now.filter(|&window| window != x11rb::NONE).and_then(pid_of) == Some(pid),
+                None => {
+                    let same = match &*clip {
+                        Clip::Image(img) => probe.get_image().is_ok_and(|got| *got.bytes == **img.as_raw()),
+                        Clip::Text(s) => probe.get_text().is_ok_and(|got| got == *s),
+                    };
+                    same && owner() == now
+                }
             };
         }
         if owned || writer.is_finished() {
