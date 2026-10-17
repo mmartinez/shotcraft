@@ -178,39 +178,67 @@ pub fn serve_clipboard(image: Option<&Path>, text: Option<&Path>) -> Result<()> 
     if let Some(path) = image {
         let img = image::open(path)?.into_rgba8();
         let _ = std::fs::remove_file(path);
-        return hold(move |set| set.image(image_data(&img)));
+        return hold(Clip::Image(img));
     }
     if let Some(path) = text {
         let s = std::fs::read_to_string(path)?;
         let _ = std::fs::remove_file(path);
-        return hold(move |set| set.text(s));
+        return hold(Clip::Text(s));
     }
     Err(Error::Other("nothing to serve".into()))
 }
 
-/// How long the X server gets to show the new clipboard owner (500 polls 10 ms apart); encoding a large image comes first.
+enum Clip {
+    Image(RgbaImage),
+    Text(String),
+}
+
+impl Clip {
+    fn write(&self, set: arboard::Set<'_>) -> std::result::Result<(), arboard::Error> {
+        match self {
+            Clip::Image(img) => set.image(image_data(img)),
+            Clip::Text(s) => set.text(s.as_str()),
+        }
+    }
+}
+
+/// How long the X server gets to show this helper as the clipboard owner (500 polls 10 ms apart); encoding a large image comes first.
 #[cfg(target_os = "linux")]
 const OWNER_POLLS: u32 = 500;
 
-/// Write the clipboard once, waiting in a thread until another app takes it; print the ready line once
-/// the X server shows the new owner. Writing again after the ready line could put this copy back over a newer one.
+/// Write the clipboard once, waiting in a thread until another app takes it, and print the ready line once
+/// this helper owns it. Writing again after the ready line could put this copy back over a newer one.
 #[cfg(target_os = "linux")]
-fn hold(write: impl FnOnce(arboard::Set<'_>) -> std::result::Result<(), arboard::Error> + Send + 'static) -> Result<()> {
+fn hold(clip: Clip) -> Result<()> {
     use arboard::SetExtLinux;
     use x11rb::protocol::xproto::ConnectionExt as _;
     let x11 = |e: &dyn std::fmt::Display| Error::Other(format!("clipboard: {e}"));
     let (conn, _) = x11rb::connect(None).map_err(|e| x11(&e))?;
     let selection = conn.intern_atom(false, b"CLIPBOARD").map_err(|e| x11(&e))?.reply().map_err(|e| x11(&e))?.atom;
     let owner = || conn.get_selection_owner(selection).ok().and_then(|cookie| cookie.reply().ok()).map(|reply| reply.owner);
-    let before = owner();
-    let writer = std::thread::spawn(move || -> Result<()> {
-        let mut cb = arboard::Clipboard::new()?;
-        write(cb.set().wait())?;
-        Ok(())
+    // arboard shares one context per process and answers `get` from memory while it owns the clipboard,
+    // so a probe that reads back this helper's content proves the owner is this helper, not another app.
+    let mut probe = arboard::Clipboard::new()?;
+    let clip = std::sync::Arc::new(clip);
+    let mut seen = owner();
+    let writer = std::thread::spawn({
+        let clip = std::sync::Arc::clone(&clip);
+        move || -> Result<()> {
+            let mut cb = arboard::Clipboard::new()?;
+            clip.write(cb.set().wait())?;
+            Ok(())
+        }
     });
     let mut owned = false;
     for _ in 0..OWNER_POLLS {
-        owned = owner() != before;
+        let now = owner();
+        if now != seen {
+            seen = now;
+            owned = match &*clip {
+                Clip::Image(img) => probe.get_image().is_ok_and(|got| *got.bytes == **img.as_raw()),
+                Clip::Text(s) => probe.get_text().is_ok_and(|got| got == *s),
+            };
+        }
         if owned || writer.is_finished() {
             break;
         }
@@ -220,16 +248,15 @@ fn hold(write: impl FnOnce(arboard::Set<'_>) -> std::result::Result<(), arboard:
         let mut out = std::io::stdout();
         let _ = writeln!(out, "{CLIPBOARD_READY}").and_then(|()| out.flush());
     } else if !writer.is_finished() {
-        return Err(Error::Other("the X server did not show the new clipboard owner".into()));
+        return Err(Error::Other("this helper never became the clipboard owner".into()));
     }
     writer.join().map_err(|_| Error::Other("the clipboard thread panicked".into()))?
 }
 
 /// Elsewhere the OS keeps the clipboard after we exit, so one write is all.
 #[cfg(not(target_os = "linux"))]
-fn hold(write: impl FnOnce(arboard::Set<'_>) -> std::result::Result<(), arboard::Error>) -> Result<()> {
-    let mut cb = arboard::Clipboard::new()?;
-    write(cb.set())?;
+fn hold(clip: Clip) -> Result<()> {
+    clip.write(arboard::Clipboard::new()?.set())?;
     Ok(())
 }
 
