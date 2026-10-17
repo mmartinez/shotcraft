@@ -28,9 +28,11 @@ fn installed_path(exe: PathBuf) -> PathBuf {
     }
 }
 
-/// Start a child without waiting for it.
+/// Start a child without waiting for it. It gets none of our standard streams: a child that outlives us
+/// (the clipboard owner, a window) would otherwise hold the caller's pipes open, and a caller reading
+/// them (an MCP host, `shotcraft … 2>&1 | cat`) would wait until that child exits.
 fn launch(cmd: &mut Command) {
-    match cmd.stdin(Stdio::null()).stdout(Stdio::null()).spawn() {
+    match cmd.stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).spawn() {
         // Reap the child so long-lived parents (the tray daemon) leave no zombies.
         Ok(mut child) => drop(std::thread::spawn(move || child.wait())),
         Err(err) => eprintln!("failed to launch {}: {err}", cmd.get_program().to_string_lossy()),
