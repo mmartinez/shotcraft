@@ -24,13 +24,13 @@ base64 = "0.23"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 clap = { version = "4", features = ["derive"] }
 dirs = "7"
-ecolor = { version = "0.36", features = ["serde"] }
-eframe = { version = "0.36", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"] }
-egui = { version = "0.36", features = ["serde"] }
+ecolor = { version = "0.37", features = ["serde"] }
+eframe = { version = "0.37", default-features = false, features = ["accesskit", "default_fonts", "glow", "wayland", "x11"] }
+egui = { version = "0.37", features = ["serde"] }
 egui-phosphor = "0.14"
-emath = { version = "0.36", features = ["serde"] }
+emath = { version = "0.37", features = ["serde"] }
 enigo = "0.6"
-epaint_default_fonts = "0.36"
+epaint_default_fonts = "0.37"
 global-hotkey = "0.8"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 ocrs = "0.13"
