@@ -31,7 +31,7 @@ egui-phosphor = "0.14"
 emath = { version = "0.36", features = ["serde"] }
 enigo = "0.6"
 epaint_default_fonts = "0.36"
-global-hotkey = "0.8"
+global-hotkey = "0.9"
 image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
 ocrs = "0.13"
 raw-window-handle = "0.6"
